@@ -1,0 +1,20 @@
+{"modality": "text", "content": "so meta just open-sourced a model that simulates how the human brain reacts to a video. i ran a creator's draft through it, re-edited based on what it showed, and we got 221,100 views.", "views": 221100, "label": "TRIBE reveal thread — strong hook + concrete outcome"}
+{"modality": "text", "content": "the video got 221,100 views.", "views": 78000, "label": "Follow-up — short, lacks hook"}
+{"modality": "text", "content": "use claude to automate the entire prediction pipeline. give it your video files, have it run each one through TRIBE v2, rank them by predicted engagement, and tell you which version to post.", "views": 41000, "label": "How-to, weaker emotional load"}
+{"modality": "text", "content": "meta's FAIR team trained it on over 1,000 hours of fMRI recordings from 720 volunteers.", "views": 12000, "label": "Stat-only, no CTA"}
+{"modality": "text", "content": "here's the breakdown of exactly what it is, how to set it up without writing a single line of code yourself, and how to actually make money from it as a creator.", "views": 156000, "label": "Promise + enumeration — classic viral structure"}
+{"modality": "text", "content": "the wild part: meta's own research shows TRIBE v2's predictions are actually more accurate than a single real brain scan.", "views": 98000, "label": "Counterintuitive claim"}
+{"modality": "text", "content": "step 1: open the Colab notebook. step 2: run the pip install cell. step 3: create HF token.", "views": 7500, "label": "Procedural — low arousal"}
+{"modality": "text", "content": "they open-sourced everything, it's completely free.", "views": 34000, "label": "Short benefit statement"}
+{"modality": "text", "content": "we already have creators making $100,000+ on our platform.", "views": 61000, "label": "Social proof + money"}
+{"modality": "text", "content": "at $3.5 CPM, 221,000 views = $773 from a single video.", "views": 29000, "label": "Math, low emotion"}
+{"modality": "text", "content": "thoughts?", "views": 800, "label": "Empty engagement bait"}
+{"modality": "text", "content": "good morning", "views": 450, "label": "Greeting baseline"}
+{"modality": "text", "content": "here's a thread of 10 lesser-known open-source AI models that will change how you create content in 2026.", "views": 184000, "label": "Number list + future promise"}
+{"modality": "text", "content": "no one is talking about this but it will 10x your conversion rate.", "views": 125000, "label": "Contrarian hook"}
+{"modality": "text", "content": "i just deleted my entire copywriting team.", "views": 212000, "label": "Shocking first-person"}
+{"modality": "text", "content": "new paper from google dropped.", "views": 22000, "label": "Announcement, no color"}
+{"modality": "text", "content": "check out my new blog post about LLM fine-tuning: link in bio.", "views": 3200, "label": "CTA spam"}
+{"modality": "text", "content": "i was broke 12 months ago. now i run a 7-figure agency. the one decision that changed everything:", "views": 267000, "label": "Rags-to-riches + cliffhanger"}
+{"modality": "text", "content": "LLM inference latency is a function of kv-cache size and attention pattern.", "views": 4100, "label": "Technical truism"}
+{"modality": "text", "content": "today i learned that whales can hold their breath for 90 minutes.", "views": 18500, "label": "Novel fact"}

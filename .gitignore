@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Env & secrets
+.env
+.env.local
+
+# Runtime caches (stay inside repo but don't commit the blobs)
+data/tribe_cache/*.npy
+data/tribe_cache/*.json
+data/results/*.json
+
+# OS
+.DS_Store
+Thumbs.db

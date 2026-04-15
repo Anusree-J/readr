@@ -1,0 +1,4 @@
+{"t": 1776274195.6581643, "experiment": 0, "hypothesis": "baseline (seed score.py)", "spearman": 0.10714285714285712, "mae": 32.646145387879734, "precision_at_topk": 0.0, "n": 7, "kept": true}
+{"t": 1776274195.7039852, "experiment": 1, "hypothesis": "Tighten hook window to first 1.5s.", "spearman": 0.10714285714285712, "mae": 32.64419497943944, "precision_at_topk": 0.0, "n": 7, "kept": false, "best_so_far": 0.10714285714285712}
+{"t": 1776274195.7436635, "experiment": 2, "hypothesis": "Use 95th percentile for peak response instead of 90th.", "spearman": 0.10714285714285712, "mae": 32.64419497943944, "precision_at_topk": 0.0, "n": 7, "kept": false, "best_so_far": 0.10714285714285712}
+{"t": 1776274195.7832649, "experiment": 3, "hypothesis": "Increase variance gain to favour dynamic content.", "spearman": 0.10714285714285712, "mae": 32.64419497943944, "precision_at_topk": 0.0, "n": 7, "kept": false, "best_so_far": 0.10714285714285712}

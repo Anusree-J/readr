@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  background: #0a0a0f;
+  color: #eaeaf1;
+}
+
+.card {
+  @apply bg-panel border border-border rounded-xl p-5;
+}
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed;
+}
+.btn-primary {
+  @apply btn bg-accent text-white hover:opacity-90;
+}
+.btn-ghost {
+  @apply btn bg-panel2 text-text hover:bg-border border border-border;
+}
+.tab {
+  @apply px-3 py-1.5 rounded-md text-sm cursor-pointer;
+}
+.tab-active {
+  @apply bg-accent2 text-white;
+}
+.tab-inactive {
+  @apply text-muted hover:text-text;
+}
+.label {
+  @apply text-xs uppercase tracking-wider text-muted;
+}
+.kbd {
+  @apply font-mono text-[11px] bg-panel2 border border-border px-1.5 py-0.5 rounded;
+}
