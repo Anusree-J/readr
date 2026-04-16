@@ -34,7 +34,25 @@ export default function Autoresearch() {
     const close = streamAutoresearch(
       budget,
       offline,
-      (e) => setHistory((h) => [...h, e]),
+      (e) => {
+        setHistory((h) => {
+          // If this is a live phase update for an experiment we already
+          // have, replace the last row rather than append a new one.
+          if (e.phase && e.phase !== "done" && e.phase !== "error") {
+            const last = h[h.length - 1];
+            if (last && last.experiment === e.experiment && last.phase !== "done") {
+              return [...h.slice(0, -1), e];
+            }
+            return [...h, e];
+          }
+          // Terminal event: replace any placeholder for this experiment.
+          const last = h[h.length - 1];
+          if (last && last.experiment === e.experiment && last.phase !== "done") {
+            return [...h.slice(0, -1), e];
+          }
+          return [...h, e];
+        });
+      },
       () => {
         setStreaming(false);
         refresh();
@@ -50,6 +68,8 @@ export default function Autoresearch() {
   const best = history
     .filter((e) => e.kept && typeof e.spearman === "number")
     .reduce((m, e) => Math.max(m, e.spearman!), -1);
+
+  const current = streaming ? history[history.length - 1] : null;
 
   return (
     <div className="space-y-6">
@@ -88,17 +108,21 @@ export default function Autoresearch() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Stat label="Experiments" value={history.length.toString()} />
+        <Stat label="Experiments" value={history.filter((h) => h.phase === "done" || h.phase === "error" || h.phase === undefined).length.toString()} />
         <Stat
           label="Best Spearman"
           value={best < 0 ? "—" : best.toFixed(3)}
         />
         <Stat
           label="Last hypothesis"
-          value={history[history.length - 1]?.hypothesis ?? "—"}
+          value={[...history].reverse().find((h) => h.hypothesis)?.hypothesis ?? "—"}
           small
         />
       </div>
+
+      {current && (
+        <LiveCard exp={current} />
+      )}
 
       <div className="card">
         <div className="label mb-2">Spearman over experiments</div>
@@ -193,6 +217,42 @@ function Stat({
       <div className={small ? "mt-1 text-sm" : "mt-1 text-2xl font-semibold"}>
         {value}
       </div>
+    </div>
+  );
+}
+
+function LiveCard({ exp }: { exp: Experiment }) {
+  const phase = exp.phase ?? "done";
+  const dotColor =
+    phase === "thinking"
+      ? "bg-warn"
+      : phase === "proposed"
+      ? "bg-accent2"
+      : phase === "error"
+      ? "bg-bad"
+      : "bg-ok";
+  return (
+    <div className="card flex items-center gap-4">
+      <div className="relative flex items-center justify-center">
+        <div className={`w-3 h-3 rounded-full ${dotColor}`} />
+        <div className={`absolute w-3 h-3 rounded-full ${dotColor} opacity-40 animate-ping`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs text-muted">
+          Experiment {exp.experiment} · {phase}
+        </div>
+        <div className="text-sm truncate">
+          {phase === "thinking" && "Agent is drafting the next edit…"}
+          {phase === "proposed" && (exp.hypothesis ?? "Proposed an edit, running eval…")}
+          {phase === "done" && (exp.hypothesis ?? "Eval complete")}
+          {phase === "error" && (exp.error ?? "Error")}
+        </div>
+      </div>
+      {phase === "done" && typeof exp.spearman === "number" && (
+        <div className="text-xs text-muted font-mono">
+          ρ={exp.spearman.toFixed(3)} · {exp.kept ? "kept" : "revert"}
+        </div>
+      )}
     </div>
   );
 }

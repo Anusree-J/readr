@@ -1,0 +1,52 @@
+# Spin up the full CBT stack: FastAPI (mock TRIBE) + Next.js.
+#
+#   docker compose up --build
+#
+# Visit http://localhost:3000. The frontend talks to http://localhost:8000
+# (mapped from the api container).
+#
+# To use real TRIBE v2, set TRIBE_BACKEND=local (with a CUDA runtime) or
+# TRIBE_BACKEND=modal + MODAL_TRIBE_ENDPOINT before `docker compose up`.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      TRIBE_BACKEND: "${TRIBE_BACKEND:-mock}"
+      MODAL_TRIBE_ENDPOINT: "${MODAL_TRIBE_ENDPOINT:-}"
+      HF_TOKEN: "${HF_TOKEN:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      AGENT_MODEL: "${AGENT_MODEL:-claude-opus-4-6}"
+      CORS_ORIGIN: "http://localhost:3000"
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist runtime caches + any labels the user adds through the UI.
+      - ./data/tribe_cache:/app/data/tribe_cache
+      - ./data/results:/app/data/results
+      - ./data/inputs:/app/data/inputs
+      - ./data/preds:/app/data/preds
+      - ./data/brain_cache:/app/data/brain_cache
+      - ./data/calibration:/app/data/calibration
+      - ./data/labeled:/app/data/labeled
+      - ./api/scoring:/app/api/scoring
+      - ./api/autoresearch:/app/api/autoresearch
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy

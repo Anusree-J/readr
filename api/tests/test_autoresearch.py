@@ -29,13 +29,19 @@ def test_eval_runs_and_returns_metrics():
 
 
 def test_runner_offline_keeps_or_reverts(isolated_scoring):
-    """Runner must produce log entries that carry the expected fields."""
+    """Runner must produce log entries that carry the expected fields.
+
+    With phased events we expect 3 events per experiment: thinking ->
+    proposed -> done (or one 'error' in place of 'done').
+    """
     results = list(run_autoresearch(budget=2, offline=True))
-    assert len(results) >= 2
-    for entry in results:
-        assert "experiment" in entry
-        if "error" in entry:
-            continue
+    # Baseline (experiment 0) + 2 experiments * up-to-3 phases each = 4..7 events.
+    assert len(results) >= 4
+    done_events = [e for e in results if e.get("phase") == "done"]
+    # Each budgeted experiment should have a terminal 'done' (or 'error').
+    terminal = [e for e in results if e.get("phase") in ("done", "error")]
+    assert len(terminal) >= 2
+    for entry in done_events:
         assert "hypothesis" in entry
         assert "kept" in entry
         assert "spearman" in entry

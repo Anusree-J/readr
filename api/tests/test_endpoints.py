@@ -89,3 +89,47 @@ def test_labeled_stats(client):
     stats = r.json()
     assert isinstance(stats, dict)
     assert stats.get("tweets", 0) > 0
+
+
+def test_compare_text_ranks_results(client):
+    r = client.post(
+        "/compare/text",
+        json={
+            "variants": [
+                "a short greeting",
+                "here's a thread of 10 things that will change your 2026",
+                "reading the new paper.",
+            ]
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["modality"] == "text"
+    assert "winner_id" in body
+    assert len(body["results"]) == 3
+    # Ranks must be 1..N and scores monotonically non-increasing.
+    ranks = [r["rank"] for r in body["results"]]
+    assert ranks == [1, 2, 3]
+    scores = [r["score"] for r in body["results"]]
+    for a, b in zip(scores, scores[1:]):
+        assert a >= b
+
+
+def test_compare_rejects_empty(client):
+    r = client.post("/compare/text", json={"variants": ["   "]})
+    assert r.status_code == 400
+
+
+def test_predicted_views_attached_to_scoring(client):
+    r = client.post("/score/text", json={"text": "some scorable content"})
+    data = r.json()
+    assert "predicted_views" in data
+    v = data["predicted_views"]
+    assert "low" in v and "mid" in v and "high" in v and "n" in v
+
+
+def test_calibration_status(client):
+    r = client.get("/calibration/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["n"] > 0

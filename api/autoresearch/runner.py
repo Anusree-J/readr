@@ -90,24 +90,57 @@ def run_autoresearch(
     for i in range(1, budget + 1):
         history = _read_history(20)
         snapshot = _checkpoint()
+
+        # Phase 1: agent is thinking. Emit a status event so the UI can
+        # show a live "thinking" row before the eval completes. This is
+        # purely cosmetic -- nothing gets written to history.jsonl here.
+        yield {
+            "t": time.time(),
+            "experiment": i,
+            "phase": "thinking",
+            "kept": False,
+        }
+
         try:
             proposal = propose(history, offline=offline)
         except Exception as e:
-            yield {"t": time.time(), "experiment": i, "error": f"agent: {e!r}", "kept": False}
+            err = {
+                "t": time.time(),
+                "experiment": i,
+                "phase": "error",
+                "error": f"agent: {e!r}",
+                "kept": False,
+            }
+            _append_history(err)
+            yield err
             continue
+
+        # Phase 2: agent proposed; show the hypothesis and the file-level
+        # diff size so the UI can stream the idea before the eval runs.
+        yield {
+            "t": time.time(),
+            "experiment": i,
+            "phase": "proposed",
+            "hypothesis": proposal.hypothesis,
+            "diff_bytes": max(0, len(proposal.score_py) - len(snapshot)),
+            "kept": False,
+        }
 
         _apply(proposal)
         try:
             result = run_eval(backend=backend)
         except Exception as e:
             _revert(snapshot)
-            yield {
+            err = {
                 "t": time.time(),
                 "experiment": i,
+                "phase": "error",
                 "hypothesis": proposal.hypothesis,
                 "error": f"eval: {e!r}",
                 "kept": False,
             }
+            _append_history(err)
+            yield err
             continue
 
         kept = result.spearman > best
@@ -119,6 +152,7 @@ def run_autoresearch(
         entry = {
             "t": time.time(),
             "experiment": i,
+            "phase": "done",
             "hypothesis": proposal.hypothesis,
             "spearman": result.spearman,
             "mae": result.mae,

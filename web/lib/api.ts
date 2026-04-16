@@ -1,5 +1,12 @@
 export const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export type PredictedViews = {
+  low: number;
+  mid: number;
+  high: number;
+  n: number;
+};
+
 export type ScoreResponse = {
   id: string;
   modality: "text" | "image" | "ui" | "video";
@@ -13,8 +20,44 @@ export type ScoreResponse = {
   sampling_hz: number;
   backend: string;
   input_preview?: string | null;
+  predicted_views?: PredictedViews;
   meta?: Record<string, unknown>;
+  rank?: number;
 };
+
+export type CompareResponse = {
+  modality: "text" | "image" | "ui" | "video";
+  winner_id: string;
+  results: ScoreResponse[];
+};
+
+export async function compareText(variants: string[]): Promise<CompareResponse> {
+  const r = await fetch(`${API}/compare/text`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ variants }),
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function compareUpload(
+  modality: "image" | "ui" | "video",
+  files: File[],
+): Promise<CompareResponse> {
+  const fd = new FormData();
+  fd.append("modality", modality);
+  for (const f of files) fd.append("files", f);
+  const r = await fetch(`${API}/compare/upload`, { method: "POST", body: fd });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function refitCalibration(): Promise<{ ok: boolean; n: number }> {
+  const r = await fetch(`${API}/calibration/refit`, { method: "POST" });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
 
 export function brainPngUrl(id: string) {
   return `${API}/score/${id}/brain.png`;
@@ -66,7 +109,9 @@ export async function getResult(id: string): Promise<ScoreResponse> {
 export type Experiment = {
   t: number;
   experiment: number;
+  phase?: "thinking" | "proposed" | "done" | "error";
   hypothesis?: string;
+  diff_bytes?: number;
   spearman?: number;
   mae?: number;
   precision_at_topk?: number;

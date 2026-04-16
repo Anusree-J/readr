@@ -34,6 +34,7 @@ from sse_starlette.sse import EventSourceResponse
 from api.autoresearch.runner import EXPERIMENTS_LOG, run_autoresearch
 from api.config import ASSETS_DIR, DATA_DIR, LABELED_DIR, SCORING_DIR, settings
 from api.ingest import ingest_any
+from api.scoring.calibration import fit_and_save, maybe_refit, predict_views
 from api.scoring.score import ViralityScore
 from api.tribe.cache import cache_key
 from api.tribe.client import get_client
@@ -135,6 +136,13 @@ def _run_pipeline(
     elif modality == "video":
         _persist_input(modality, result_id, text=None, content_bytes=video_bytes, suffix=".mp4")
 
+    # Calibrated view forecast. Best-effort — if calibration fails for any
+    # reason we still return the score.
+    try:
+        views = predict_views(vs.score)
+    except Exception as e:
+        views = {"low": 0, "mid": 0, "high": 0, "n": 0, "error": str(e)}
+
     payload = _vs_to_dict(
         vs,
         extra={
@@ -144,6 +152,7 @@ def _run_pipeline(
             "sampling_hz": settings.sampling_hz,
             "backend": pred.meta.get("backend"),
             "input_preview": (text if modality == "text" else None),
+            "predicted_views": views,
         },
     )
     (RESULTS_DIR / f"{result_id}.json").write_text(json.dumps(payload))
@@ -199,6 +208,49 @@ def get_result(result_id: str):
     if not fp.exists():
         raise HTTPException(404, "unknown result id")
     return json.loads(fp.read_text())
+
+
+class CompareTextIn(BaseModel):
+    variants: list[str]
+
+
+@app.post("/compare/text")
+def compare_text(body: CompareTextIn):
+    if not body.variants or any(not v.strip() for v in body.variants):
+        raise HTTPException(400, "need >= 1 non-empty variants")
+    out = []
+    with tempfile.TemporaryDirectory() as td:
+        for v in body.variants:
+            out.append(_run_pipeline("text", Path(td), text=v))
+    out.sort(key=lambda r: -r["score"])
+    for i, r in enumerate(out):
+        r["rank"] = i + 1
+    return {"modality": "text", "winner_id": out[0]["id"], "results": out}
+
+
+@app.post("/compare/upload")
+async def compare_upload(
+    modality: Literal["image", "ui", "video"] = Form(...),
+    files: list[UploadFile] = File(...),
+):
+    if not files:
+        raise HTTPException(400, "need >= 1 file")
+    out = []
+    with tempfile.TemporaryDirectory() as td:
+        for f in files:
+            data = await f.read()
+            if not data:
+                continue
+            if modality == "video":
+                out.append(_run_pipeline("video", Path(td), video_bytes=data))
+            else:
+                out.append(_run_pipeline(modality, Path(td), image_bytes=data))
+    if not out:
+        raise HTTPException(400, "no usable uploads")
+    out.sort(key=lambda r: -r["score"])
+    for i, r in enumerate(out):
+        r["rank"] = i + 1
+    return {"modality": modality, "winner_id": out[0]["id"], "results": out}
 
 
 @app.get("/score/{result_id}/brain.png")
@@ -267,6 +319,28 @@ def labeled_stats():
     return out
 
 
+# --- Calibration -----------------------------------------------------------
+
+
+@app.post("/calibration/refit")
+def refit_calibration():
+    calib = fit_and_save()
+    return {"ok": True, "n": calib.n, "dataset_hash": calib.dataset_hash}
+
+
+@app.get("/calibration/status")
+def calibration_status():
+    calib = maybe_refit()
+    # Return a compact summary, not the full tables.
+    return {
+        "n": calib.n,
+        "dataset_hash": calib.dataset_hash,
+        "score_py_version": calib.score_py_version,
+        "x_min": calib.x[0] if calib.x else None,
+        "x_max": calib.x[-1] if calib.x else None,
+    }
+
+
 # --- Autoresearch -----------------------------------------------------------
 
 
@@ -292,13 +366,28 @@ def current_scoring():
 
 @app.post("/autoresearch/run")
 async def run_experiments(budget: int = 5, offline: bool = False):
+    """Stream experiments as they happen. Bridges the sync generator to
+    async SSE via a thread so 'thinking' events reach the UI before eval
+    finishes."""
+    queue: asyncio.Queue = asyncio.Queue()
+    SENTINEL = object()
+    loop = asyncio.get_event_loop()
+
+    def producer():
+        try:
+            for entry in run_autoresearch(budget=budget, offline=offline):
+                asyncio.run_coroutine_threadsafe(queue.put(entry), loop)
+        finally:
+            asyncio.run_coroutine_threadsafe(queue.put(SENTINEL), loop)
+
+    loop.run_in_executor(None, producer)
+
     async def event_stream():
-        loop = asyncio.get_event_loop()
-        gen = await loop.run_in_executor(
-            None, lambda: list(run_autoresearch(budget=budget, offline=offline))
-        )
-        for entry in gen:
-            yield {"event": "experiment", "data": json.dumps(entry)}
+        while True:
+            item = await queue.get()
+            if item is SENTINEL:
+                break
+            yield {"event": "experiment", "data": json.dumps(item)}
         yield {"event": "done", "data": "{}"}
 
     return EventSourceResponse(event_stream())

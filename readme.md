@@ -15,6 +15,13 @@ head overnight.
 
 ## Quick start (mock backend, no GPU, no secrets)
 
+### Docker (one command)
+```bash
+docker compose up --build
+```
+Open http://localhost:3000.
+
+### Manual
 ```bash
 # Backend
 cd api
@@ -24,7 +31,7 @@ uvicorn api.main:app --reload --port 8000
 
 # Frontend (separate terminal)
 cd web
-npm install
+npm install --legacy-peer-deps
 npm run dev
 ```
 
@@ -77,13 +84,17 @@ Either way, predictions are content-addressed and cached under
 |--------|-----------------------------------|--------------------------------------|
 | POST   | /score/text                       | JSON `{text}` → score                |
 | POST   | /score/{image,ui,video}           | multipart `file` → score             |
+| POST   | /compare/text                     | JSON `{variants}` → ranked results   |
+| POST   | /compare/upload                   | multipart: rank image/ui/video batch |
 | GET    | /score/{id}                       | cached result by id                  |
 | GET    | /score/{id}/brain.png             | nilearn fsaverage5 cortex rendering  |
 | POST   | /labeled/add                      | promote a result into training set   |
 | GET    | /labeled/stats                    | per-modality labeled row counts      |
+| POST   | /calibration/refit                | refit score → views regression       |
+| GET    | /calibration/status               | current calibration summary          |
 | GET    | /autoresearch/history             | experiment log                       |
 | GET    | /autoresearch/current             | current `score.py` + rubric          |
-| POST   | /autoresearch/run?budget=5        | SSE stream of experiments            |
+| POST   | /autoresearch/run?budget=5        | SSE stream of experiments (phased)   |
 
 ## Seed dataset
 

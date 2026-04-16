@@ -1,0 +1,17 @@
+.git
+.venv
+node_modules
+web/node_modules
+web/.next
+data/tribe_cache
+data/results
+data/inputs
+data/preds
+data/brain_cache
+data/calibration
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.env
+.env.local

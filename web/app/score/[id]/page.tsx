@@ -7,6 +7,7 @@ import ROIBars from "@/components/ROIBars";
 import BrainHeatmap from "@/components/BrainHeatmap";
 import ScoreDial from "@/components/ScoreDial";
 import AddToTrainingSet from "@/components/AddToTrainingSet";
+import PredictedViewsCard from "@/components/PredictedViews";
 
 export default function ResultPage({
   params,
@@ -87,7 +88,8 @@ export default function ResultPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 text-sm">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+        <PredictedViewsCard v={data.predicted_views} />
         <Metric label="Hotspots" value={data.hotspots.length.toString()} />
         <Metric label="Dead zones" value={data.dead_zones.length.toString()} />
         <Metric

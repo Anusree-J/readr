@@ -28,6 +28,9 @@ export default function RootLayout({
               <Link href="/" className="hover:text-accent">
                 Score
               </Link>
+              <Link href="/compare" className="hover:text-accent">
+                Compare
+              </Link>
               <Link href="/autoresearch" className="hover:text-accent">
                 Autoresearch
               </Link>
