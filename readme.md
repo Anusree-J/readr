@@ -39,6 +39,56 @@ Open http://localhost:3000. The `mock` TRIBE backend produces deterministic
 synthetic brain responses so you can exercise the full pipeline — ingest,
 scoring, and autoresearch — without a GPU.
 
+## Where things actually run (and what needs a GPU)
+
+Short answer: **TRIBE needs a GPU (once per piece of content). Autoresearch
+does not — it reuses cached predictions.**
+
+```
+┌──────────────────────────┐       ┌──────────────────────────┐
+│ TRIBE v2 (Meta FAIR)     │       │ api/scoring/score.py     │
+│ GPU required, ~1 min/run │──────▶│ Pure NumPy, <1ms / item  │
+│ Called once per new      │ cached│ Agent-editable           │
+│ content, result persisted│ to    │ Autoresearch loop lives  │
+│ to data/tribe_cache/*.npy│ disk  │ entirely here (CPU only) │
+└──────────────────────────┘       └──────────────────────────┘
+```
+
+This is why our autoresearch is cheap relative to Karpathy's: he edits
+`train.py` (every experiment = real training = minutes), we edit the
+scoring head that reads already-computed TRIBE tensors (every experiment
+= ms × N labeled items).
+
+### Concrete deployment topology
+
+| Component                | Where                                            |
+|--------------------------|--------------------------------------------------|
+| Frontend (Next.js)       | Vercel (free tier) — one region                  |
+| API (FastAPI)            | Fly.io / Railway / Render — CPU host, 1 vCPU     |
+| TRIBE GPU inference      | Modal serverless GPU, invoked only on cache miss |
+| Agent reasoning          | Anthropic API (your key)                         |
+| Labeled dataset          | `data/labeled/*.jsonl` in the API's filesystem   |
+
+### Cost / time back-of-envelope for the seed dataset (72 items)
+
+| Stage                                           | Hardware  | Cost                             |
+|-------------------------------------------------|-----------|----------------------------------|
+| One-time cache warm (72 × ~1 min on T4)         | Modal T4  | ~72 min ≈ **~$1 on Modal**       |
+| Each autoresearch experiment (read cache + score) | CPU     | ~1 s total, free                 |
+| 50-experiment overnight run                     | CPU       | ~1 min, free (+ Anthropic tokens)|
+| User submits a new tweet / reel                 | Modal T4  | ~1 min, ~$0.01, cached forever   |
+
+### Warm the cache before the first autoresearch run
+
+```bash
+# After TRIBE_BACKEND + credentials are configured
+python scripts/warm_cache.py
+```
+
+This iterates every row in `data/labeled/*.jsonl`, ingests it, and calls
+the configured TRIBE backend once per unique item. Hits are skipped. Do
+this after bulk-importing a CSV.
+
 ## Upgrading to real TRIBE v2
 
 ### Option A — Local CUDA
