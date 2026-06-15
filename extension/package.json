@@ -1,0 +1,7 @@
+{
+  "name": "docsigner-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Source uses ES modules; this file lets Node run the test suite. Chrome ignores it."
+}

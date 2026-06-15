@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "DocSigner — Verifiable Credentials for Google Docs",
+  "version": "0.1.0",
+  "description": "Turn the current Google Doc into a W3C Verifiable Credential (VC-JWT), signed locally with a key only you hold.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://docs.google.com/*"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Sign this Google Doc",
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://docs.google.com/document/*"],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/verify.html"],
+      "matches": ["https://docs.google.com/*"]
+    }
+  ]
+}

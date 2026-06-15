@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Verify a Document Credential — DocSigner</title>
+    <link rel="stylesheet" href="popup.css" />
+    <style>
+      body { width: auto; max-width: 720px; margin: 0 auto; padding: 32px 20px 60px; }
+      .panel { display: block; padding: 0; }
+      textarea.jwt { min-height: 140px; }
+      .raw { white-space: pre-wrap; background: var(--surface); border: 1px solid var(--border);
+        border-radius: 8px; padding: 12px; font-family: ui-monospace, monospace; font-size: 12px;
+        margin-top: 10px; max-height: 300px; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <header style="padding-left: 0">
+      <div class="brand">
+        <span class="logo">🔎</span>
+        <div>
+          <h1>Verify a Document Credential</h1>
+          <p class="tagline">Checks the signature offline using the credential's own embedded public key</p>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel is-active">
+      <label class="field-label" for="verifyIn">Paste a VC-JWT</label>
+      <textarea id="verifyIn" class="jwt" spellcheck="false" placeholder="eyJhbGciOiJFUzI1NiIs…"></textarea>
+      <div class="row">
+        <button id="verifyBtn" class="primary" style="width:auto">Verify</button>
+        <button id="loadFile" class="ghost">Load .jwt file…</button>
+        <input type="file" id="fileInput" accept=".jwt,.txt,application/jwt" hidden />
+      </div>
+
+      <div id="verifyOut" class="status" hidden></div>
+      <dl class="summary" id="verifySummary" hidden style="margin-top:14px"></dl>
+
+      <h2 id="rawHeading" hidden>Decoded credential</h2>
+      <div id="raw" class="raw" hidden></div>
+    </section>
+
+    <script type="module" src="verify.js"></script>
+  </body>
+</html>

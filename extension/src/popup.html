@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>DocSigner</title>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="logo">🔏</span>
+        <div>
+          <h1>DocSigner</h1>
+          <p class="tagline">Verifiable credentials for Google Docs</p>
+        </div>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab is-active" data-tab="sign">Sign</button>
+      <button class="tab" data-tab="identity">Identity</button>
+      <button class="tab" data-tab="verify">Verify</button>
+    </nav>
+
+    <!-- ── Sign ─────────────────────────────────────────────── -->
+    <section class="panel is-active" data-panel="sign">
+      <div id="docInfo" class="doc-info muted">Checking the current tab…</div>
+
+      <label class="checkbox">
+        <input type="checkbox" id="embedContent" />
+        <span>Embed the document text (self-contained, larger credential)</span>
+      </label>
+
+      <button id="signBtn" class="primary" disabled>Sign this document</button>
+
+      <div id="signStatus" class="status" hidden></div>
+
+      <div id="signResult" hidden>
+        <h2>Credential summary</h2>
+        <dl class="summary" id="summary"></dl>
+
+        <label class="field-label" for="jwtOut">VC-JWT</label>
+        <textarea id="jwtOut" class="jwt" rows="6" readonly spellcheck="false"></textarea>
+
+        <div class="row">
+          <button id="copyJwt" class="ghost">Copy</button>
+          <button id="downloadJwt" class="ghost">Download .jwt</button>
+          <button id="verifyThis" class="ghost">Verify →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Identity ─────────────────────────────────────────── -->
+    <section class="panel" data-panel="identity">
+      <p class="muted">
+        Your signing key lives only in this browser. The public half is published
+        inside every credential as a <code>did:jwk</code>, so anyone can verify
+        without contacting a server.
+      </p>
+
+      <label class="field-label">Your DID (issuer)</label>
+      <textarea id="didOut" class="jwt" rows="3" readonly spellcheck="false"></textarea>
+      <div class="row">
+        <button id="copyDid" class="ghost">Copy DID</button>
+        <button id="copyJwk" class="ghost">Copy public key (JWK)</button>
+      </div>
+
+      <p class="muted small" id="keyCreated"></p>
+
+      <hr />
+      <button id="resetKey" class="danger">Reset signing key…</button>
+      <p class="muted small">
+        Resetting creates a brand-new identity. Credentials signed with the old
+        key stay valid, but new ones will be issued under a different DID.
+      </p>
+    </section>
+
+    <!-- ── Verify ───────────────────────────────────────────── -->
+    <section class="panel" data-panel="verify">
+      <label class="field-label" for="verifyIn">Paste a VC-JWT</label>
+      <textarea id="verifyIn" class="jwt" rows="6" spellcheck="false" placeholder="eyJhbGciOiJFUzI1NiIs…"></textarea>
+      <button id="verifyBtn" class="primary">Verify</button>
+      <div id="verifyOut" class="status" hidden></div>
+      <dl class="summary" id="verifySummary" hidden></dl>
+    </section>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
