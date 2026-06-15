@@ -2,6 +2,7 @@ import assert from "node:assert";
 import {
   generateKeyPairJwk, importPrivateKey, didJwkFromPublicJwk, publicJwkFromDidJwk,
   toPublicJwk, signCompactJws, verifyCompactJws, sha256Hex, b64uEncode, b64uDecodeToText,
+  publicJwkEqual,
 } from "../src/crypto.js";
 
 let pass = 0;
@@ -56,5 +57,11 @@ const other = await generateKeyPairJwk();
 const otherPriv = await importPrivateKey(other.privateJwk);
 const impostor = await signCompactJws({ ...header }, payload, otherPriv); // payload still claims original did
 assert.equal((await verifyCompactJws(impostor)).valid, false); ok("rejects a signature from a non-issuer key");
+
+// publicJwkEqual: same key matches (incl. resolved from did), different key doesn't.
+// This is what binds a DeDi-hosted record to the credential's signing key.
+assert.equal(publicJwkEqual(publicJwk, publicJwkFromDidJwk(did)), true); ok("publicJwkEqual matches a key resolved from its own DID");
+assert.equal(publicJwkEqual(publicJwk, { ...toPublicJwk(publicJwk), x: "AAAA" }), false); ok("publicJwkEqual rejects a tampered key");
+assert.equal(publicJwkEqual(publicJwk, other.publicJwk), false); ok("publicJwkEqual rejects a different issuer's key");
 
 console.log(`\nAll ${pass} assertions passed.`);

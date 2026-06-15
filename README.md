@@ -52,10 +52,53 @@ The signature proves two things to anyone holding the VC-JWT:
 - **Integrity** — neither the credential nor the document digest was altered
   after signing; any change invalidates the signature.
 
-This is a **self-asserted** credential: the `did:jwk` is an anonymous key, not a
-real-world identity vouched for by a third party. To bind it to a real identity
-you'd publish your DID somewhere trusted (your website, a `did:web`, an
-organizational registry). That's a natural next step — see below.
+By default this is a **self-asserted** credential: the `did:jwk` is an anonymous
+key, not a real-world identity vouched for by a third party. To bind it to a
+named organisation, publish your public key to a **directory** — see below.
+
+---
+
+## Directory hosting with DeDi (optional)
+
+[DeDi](https://dedi.global) (Decentralized Directory) is a public lookup layer —
+"DNS for trust" — organised as **namespace → registry → record**. An organisation
+publishes things like public keys, membership lists, and revocation lists as
+records under its namespace, and anyone can resolve them with a single API call.
+[OpenCred](https://opencred.global) builds verifiable-credential issuance on top
+of this idea.
+
+This extension can publish **your issuer public key** as a DeDi record, which
+upgrades the trust story:
+
+- **Without DeDi:** a verifier learns the credential was signed by *some* key
+  (`did:jwk`) — internally consistent, but anonymous.
+- **With DeDi:** the credential carries a `directory` hint pointing at your
+  record. A verifier resolves it, confirms the published key **equals** the key
+  that signed the credential, and now knows it was issued by *your named
+  organisation* — not just an anonymous key.
+
+### Set it up
+
+1. Open the extension's **options** page (right-click the icon → *Options*, or
+   **Identity → Manage DeDi hosting…**).
+2. Enter your **issuer name**, **DeDi base URL** (default `https://dedi.global`),
+   **namespace**, **registry**, and an **API key** if your instance needs one for
+   writes. Endpoint path templates are configurable under *Advanced* because
+   they differ per DeDi instance.
+3. Click **Publish public key to DeDi**. You'll be asked to grant access to that
+   directory's origin (the manifest only requests it optionally). The extension
+   POSTs a record containing your `did:jwk`, `ES256` public JWK, and issuer name,
+   then stores the resolvable **lookup URL**.
+
+From then on, every credential you sign embeds the directory hint. In the
+**Verify** page, a *Verify issuer via DeDi directory* button fetches the record
+and confirms the hosted key matches the signing key.
+
+> The published record holds only your **public** key and issuer name — never the
+> private key, which stays in your browser.
+
+Docs: [DeDi](https://dedi-global.gitbook.io/docs) ·
+[OpenCred](https://opencred.gitbook.io/docs)
 
 ---
 
@@ -74,8 +117,8 @@ organizational registry). That's a natural next step — see below.
 - **Sign tab** — signs the current doc. Optionally tick *Embed the document
   text* to make the credential self-contained (a verifier can then confirm the
   content offline, without re-opening the doc). Copy or download the `.vc.jwt`.
-- **Identity tab** — view/copy your issuer **DID** and **public key (JWK)**, or
-  reset to a fresh identity.
+- **Identity tab** — view/copy your issuer **DID** and **public key (JWK)**,
+  reset to a fresh identity, or open **DeDi hosting** settings (see below).
 - **Verify tab** — paste any VC-JWT to check it. A full-page verifier also lives
   at `chrome-extension://<extension-id>/src/verify.html`.
 
@@ -88,10 +131,11 @@ extension/
   manifest.json          MV3 manifest
   src/
     crypto.js            Zero-dependency WebCrypto primitives (ES256, JWS, did:jwk)
-    background.js        Service worker: key custody, doc export, VC issuance
+    background.js        Service worker: key custody, doc export, VC issuance, DeDi
     content.js           Floating "Sign" button injected into Google Docs
     popup.html/.css/.js  Toolbar popup: Sign / Identity / Verify
-    verify.html/.js      Standalone offline verifier page
+    options.html/.js     DeDi directory hosting settings + publish
+    verify.html/.js      Standalone verifier (offline + DeDi issuer resolution)
   icons/                 16/48/128 px action icons
   test/crypto.test.mjs   End-to-end sign → verify → tamper test
 ```
@@ -123,9 +167,9 @@ credentials and impostor signatures.
 
 ## Possible next steps
 
-- **`did:web`** issuer so a credential maps to a real domain you control.
+- **DeDi revocation/status registry** so issued credentials can be revoked.
+- **`did:web`** issuer as an alternative directory binding to a domain you own.
 - **Selective disclosure** (SD-JWT) to reveal only chosen fields.
-- **Revocation** via a status list.
 - **Sign uploaded files** (PDF/DOCX) by hashing raw bytes, not just Docs.
 - **Anchor** the digest to a timestamping authority or ledger for proof-of-time.
 

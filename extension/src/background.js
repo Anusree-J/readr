@@ -17,6 +17,25 @@ import {
 } from "./crypto.js";
 
 const KEY_STORAGE = "docsigner.key.v1";
+const DEDI_STORAGE = "docsigner.dedi.v1";
+
+// DeDi (Decentralized Directory — https://dedi.global) lets an organisation
+// publish public keys, membership lists, etc. as records under a namespace, so
+// they can be resolved and trusted by anyone. We host the issuer's public key
+// there so a credential's anonymous did:jwk can be bound to a named directory
+// entry. Endpoint templates are configurable because paths differ per instance.
+const DEDI_DEFAULTS = {
+  enabled: false,
+  baseUrl: "https://dedi.global",
+  apiKey: "",
+  namespaceId: "",
+  registryName: "docsigner-keys",
+  issuerName: "",
+  // {placeholders} are filled from the config at call time.
+  addRecordPath: "/dedi/{namespaceId}/{registryName}/add-record",
+  lookupPath: "/dedi/lookup/{namespaceId}/{registryName}/{recordName}",
+  published: null, // { recordName, lookupUrl, publishedAt }
+};
 
 // ---------------------------------------------------------------------------
 // Key lifecycle
@@ -45,6 +64,82 @@ async function getOrCreateKey() {
 async function resetKey() {
   await chrome.storage.local.remove(KEY_STORAGE);
   return getOrCreateKey();
+}
+
+// ---------------------------------------------------------------------------
+// DeDi directory hosting
+// ---------------------------------------------------------------------------
+
+async function getDediConfig() {
+  const out = await chrome.storage.local.get(DEDI_STORAGE);
+  return { ...DEDI_DEFAULTS, ...(out[DEDI_STORAGE] || {}) };
+}
+
+async function setDediConfig(patch) {
+  const next = { ...(await getDediConfig()), ...patch };
+  await chrome.storage.local.set({ [DEDI_STORAGE]: next });
+  return next;
+}
+
+function fillTemplate(tpl, vars) {
+  return tpl.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(vars[k] ?? ""));
+}
+
+function dediHeaders(cfg) {
+  const h = { "Content-Type": "application/json" };
+  if (cfg.apiKey) h["Authorization"] = "Bearer " + cfg.apiKey;
+  return h;
+}
+
+// Publish the issuer's public key as a DeDi record and remember its lookup URL.
+async function publishKeyToDedi() {
+  const cfg = await getDediConfig();
+  const key = await getOrCreateKey();
+  if (!cfg.baseUrl || !cfg.namespaceId || !cfg.registryName) {
+    throw new Error("Set the DeDi base URL, namespace, and registry first.");
+  }
+
+  const base = cfg.baseUrl.replace(/\/+$/, "");
+  const recordName = cfg.published?.recordName || "key-" + key.did.slice(-12);
+  const lookupUrl = base + fillTemplate(cfg.lookupPath, { ...cfg, recordName });
+
+  // The record carries everything a verifier needs to trust this key.
+  const body = {
+    record_name: recordName,
+    description: `Document-signing public key for ${cfg.issuerName || "issuer"}`,
+    details: {
+      did: key.did,
+      name: cfg.issuerName || undefined,
+      type: "JsonWebKey",
+      alg: "ES256",
+      kid: key.did + "#0",
+      publicKeyJwk: key.publicJwk,
+    },
+  };
+
+  const url = base + fillTemplate(cfg.addRecordPath, { ...cfg, recordName });
+  const res = await fetch(url, { method: "POST", headers: dediHeaders(cfg), body: JSON.stringify(body) });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`DeDi rejected the record (HTTP ${res.status}). ${text.slice(0, 200)}`);
+  }
+
+  const published = { recordName, lookupUrl, publishedAt: new Date().toISOString() };
+  await setDediConfig({ enabled: true, published });
+  return published;
+}
+
+// Fetch a published record and return its public key JWK (run from the worker
+// so the user's granted host permission applies and CORS is a non-issue).
+async function resolveDedi(lookupUrl) {
+  const res = await fetch(lookupUrl, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`Directory lookup failed (HTTP ${res.status}).`);
+  const data = await res.json();
+  // Be liberal about where the key sits in the response envelope.
+  const details = data?.details || data?.record?.details || data?.data?.details || data;
+  const publicKeyJwk = details?.publicKeyJwk || details?.publicJwk || data?.publicKeyJwk;
+  if (!publicKeyJwk) throw new Error("No public key found in the directory record.");
+  return { publicKeyJwk, did: details?.did, name: details?.name, raw: data };
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +178,8 @@ async function fetchDocText(docId) {
 async function buildAndSignCredential({ docId, docUrl, title, text, embedContent }) {
   const key = await getOrCreateKey();
   const privateKey = await importPrivateKey(key.privateJwk);
+  const dedi = await getDediConfig();
+  const hosted = dedi.enabled && dedi.published ? dedi : null;
 
   const hashHex = await sha256Hex(text);
   const now = new Date();
@@ -107,17 +204,37 @@ async function buildAndSignCredential({ docId, docUrl, title, text, embedContent
     credentialSubject.encodedContent = "base64url," + b64uEncode(text);
   }
 
+  // The issuer is the did:jwk; when a directory record exists we name the issuer
+  // and attach a resolution hint so verifiers can bind the key to that record.
+  const issuer = hosted
+    ? {
+        id: key.did,
+        name: hosted.issuerName || undefined,
+        directory: {
+          type: "DeDiDirectory",
+          lookupUrl: hosted.published.lookupUrl,
+          namespace: hosted.namespaceId,
+          registry: hosted.registryName,
+          record: hosted.published.recordName,
+        },
+      }
+    : key.did;
+
   // W3C Verifiable Credentials Data Model 2.0 payload.
   const vc = {
     "@context": ["https://www.w3.org/ns/credentials/v2"],
     type: ["VerifiableCredential", "VerifiableDocumentCredential"],
-    issuer: key.did,
+    issuer,
     validFrom: nowIso,
     credentialSubject,
   };
 
   // JOSE/JWT envelope (VC secured with JOSE — "Securing VCs using JOSE & COSE").
-  const header = { alg: "ES256", typ: "vc+jwt", kid: key.did + "#0" };
+  const header = {
+    alg: "ES256",
+    typ: "vc+jwt",
+    kid: hosted ? hosted.published.lookupUrl : key.did + "#0",
+  };
   const payload = {
     iss: key.did,
     sub: subjectId,
@@ -152,6 +269,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case "RESET_KEY": {
           const key = await resetKey();
           sendResponse({ ok: true, did: key.did, publicJwk: key.publicJwk, createdAt: key.createdAt });
+          break;
+        }
+        case "GET_DEDI": {
+          sendResponse({ ok: true, config: await getDediConfig() });
+          break;
+        }
+        case "SET_DEDI": {
+          sendResponse({ ok: true, config: await setDediConfig(msg.patch || {}) });
+          break;
+        }
+        case "PUBLISH_DEDI": {
+          const published = await publishKeyToDedi();
+          sendResponse({ ok: true, published });
+          break;
+        }
+        case "RESOLVE_DEDI": {
+          const result = await resolveDedi(msg.lookupUrl);
+          sendResponse({ ok: true, ...result });
           break;
         }
         case "SIGN_DOC": {

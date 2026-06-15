@@ -90,6 +90,15 @@ export function toPublicJwk(jwk) {
   return { crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y };
 }
 
+// Structural equality of two public EC JWKs (ignores order & extra metadata).
+// Used to confirm a directory-hosted key is the same one inside a credential.
+export function publicJwkEqual(a, b) {
+  if (!a || !b) return false;
+  const pa = toPublicJwk(a);
+  const pb = toPublicJwk(b);
+  return pa.kty === pb.kty && pa.crv === pb.crv && pa.x === pb.x && pa.y === pb.y;
+}
+
 // did:jwk — https://github.com/quartzjer/did-jwk/blob/main/spec.md
 export function didJwkFromPublicJwk(publicJwk) {
   return "did:jwk:" + b64uEncode(JSON.stringify(toPublicJwk(publicJwk)));

@@ -5,6 +5,8 @@
   "description": "Turn the current Google Doc into a W3C Verifiable Credential (VC-JWT), signed locally with a key only you hold.",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": ["https://docs.google.com/*"],
+  "optional_host_permissions": ["https://*/*"],
+  "options_page": "src/options.html",
   "background": {
     "service_worker": "src/background.js",
     "type": "module"

@@ -98,7 +98,17 @@ async function initIdentity() {
   if (!identity?.ok) return;
   $("didOut").value = identity.did;
   $("keyCreated").textContent = "Key created " + new Date(identity.createdAt).toLocaleString();
+
+  const { config } = await send({ type: "GET_DEDI" });
+  if (config?.enabled && config.published) {
+    $("dediStatus").textContent =
+      `✓ Published to ${config.namespaceId}/${config.registryName}` +
+      (config.issuerName ? ` as “${config.issuerName}”` : "");
+    $("dediStatus").style.color = "var(--ok)";
+  }
 }
+
+$("openOptions").addEventListener("click", () => chrome.runtime.openOptionsPage());
 
 $("copyDid").addEventListener("click", () => copy(identity.did, $("copyDid"), "Copy DID"));
 $("copyJwk").addEventListener("click", () =>
@@ -146,12 +156,15 @@ async function runVerify() {
       showStatus(out, "bad", "✕ Signature is INVALID — do not trust this credential.");
     }
 
+    const dir = payload.vc?.issuer?.directory;
+    const issuerName = payload.vc?.issuer?.name;
     renderSummary(summary, {
       Document: subj.name || "—",
       "SHA-256": short(subj.sha256 || "—"),
-      Issuer: short(payload.iss || "—", 28),
+      Issuer: (issuerName ? issuerName + " · " : "") + short(payload.iss || "—", 24),
       "Issued at": payload.iat ? new Date(payload.iat * 1000).toLocaleString() : "—",
       Content: contentNote,
+      Directory: dir ? "hosted — open the full verifier to resolve" : "self-contained",
       Subject: subj.url || subj.id || "—",
     });
     summary.hidden = false;

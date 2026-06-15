@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DocSigner — DeDi hosting</title>
+    <link rel="stylesheet" href="popup.css" />
+    <style>
+      body { width: auto; max-width: 640px; margin: 0 auto; padding: 28px 22px 60px; }
+      .panel { display: block; padding: 0; }
+      input[type="text"], input[type="url"], input[type="password"] {
+        width: 100%; background: var(--surface); color: var(--text);
+        border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px;
+        font-size: 13px; box-sizing: border-box; font-family: inherit;
+      }
+      details { margin: 10px 0; }
+      summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+      .help { font-size: 11.5px; color: var(--muted); margin: 4px 0 0; }
+      a { color: var(--accent); }
+      .grid { display: grid; gap: 12px; }
+    </style>
+  </head>
+  <body>
+    <header style="padding-left: 0">
+      <div class="brand">
+        <span class="logo">🗂️</span>
+        <div>
+          <h1>DeDi directory hosting</h1>
+          <p class="tagline">Publish your issuer public key to a decentralized directory</p>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel is-active">
+      <p class="muted">
+        By default your credentials carry an anonymous <code>did:jwk</code>. Publishing
+        your public key to a <a href="https://dedi.global" target="_blank">DeDi</a>
+        namespace binds that key to a named organisation, so verifiers can confirm
+        <em>who</em> issued a document — not just that the signature is internally consistent.
+        See the <a href="https://dedi-global.gitbook.io/docs" target="_blank">DeDi docs</a>
+        and <a href="https://opencred.gitbook.io/docs" target="_blank">OpenCred docs</a>.
+      </p>
+
+      <label class="field-label">Your issuer DID</label>
+      <textarea id="didOut" class="jwt" rows="2" readonly spellcheck="false"></textarea>
+
+      <div class="grid" style="margin-top:16px">
+        <div>
+          <label class="field-label" for="issuerName">Issuer / organisation name</label>
+          <input type="text" id="issuerName" placeholder="Acme University" />
+        </div>
+        <div>
+          <label class="field-label" for="baseUrl">DeDi base URL</label>
+          <input type="url" id="baseUrl" placeholder="https://dedi.global" />
+        </div>
+        <div>
+          <label class="field-label" for="namespaceId">Namespace ID</label>
+          <input type="text" id="namespaceId" placeholder="your-org-namespace" />
+        </div>
+        <div>
+          <label class="field-label" for="registryName">Registry name</label>
+          <input type="text" id="registryName" placeholder="docsigner-keys" />
+        </div>
+        <div>
+          <label class="field-label" for="apiKey">API key / token (optional)</label>
+          <input type="password" id="apiKey" placeholder="Bearer token for write access" />
+          <p class="help">Sent as <code>Authorization: Bearer …</code> when publishing. Stored locally.</p>
+        </div>
+      </div>
+
+      <details>
+        <summary>Advanced — endpoint templates (per-instance)</summary>
+        <div class="grid" style="margin-top:10px">
+          <div>
+            <label class="field-label" for="addRecordPath">Add-record path</label>
+            <input type="text" id="addRecordPath" />
+          </div>
+          <div>
+            <label class="field-label" for="lookupPath">Lookup path</label>
+            <input type="text" id="lookupPath" />
+          </div>
+          <p class="help">
+            Placeholders: <code>{namespaceId}</code>, <code>{registryName}</code>, <code>{recordName}</code>.
+          </p>
+        </div>
+      </details>
+
+      <div class="row" style="margin-top:8px">
+        <button id="saveBtn" class="ghost">Save</button>
+        <button id="publishBtn" class="primary" style="width:auto">Publish public key to DeDi</button>
+      </div>
+
+      <div id="status" class="status" hidden></div>
+
+      <div id="publishedBox" hidden>
+        <h2>Published record</h2>
+        <dl class="summary" id="publishedSummary"></dl>
+        <div class="row">
+          <button id="copyLookup" class="ghost">Copy lookup URL</button>
+          <a id="openLookup" class="ghost" target="_blank" style="text-decoration:none;display:inline-block">Open ↗</a>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
