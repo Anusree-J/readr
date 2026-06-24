@@ -22,7 +22,8 @@ struct ArticleComposeView: View {
                 #endif
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
-                        if !model.markdown.isEmpty {
+                        // Only export a finished article (not a half-streamed one).
+                        if !model.isComposing && !model.markdown.isEmpty {
                             ShareLink(item: model.markdown) {
                                 Label("Export", systemImage: "square.and.arrow.up")
                             }
@@ -38,12 +39,19 @@ struct ArticleComposeView: View {
 
     @ViewBuilder
     private var content: some View {
-        if model.isComposing && model.markdown.isEmpty {
-            // Composing, nothing streamed back yet.
-            ProgressView("Composing your article…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if model.isComposing {
+            // While streaming, show the text read-only so user edits can't
+            // interleave with (or be wiped by) incoming deltas.
+            ScrollView {
+                Text(model.markdown.isEmpty ? "Composing your article…" : model.markdown)
+                    .font(.body)
+                    .foregroundStyle(model.markdown.isEmpty ? .secondary : .primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            }
         } else if !model.markdown.isEmpty {
-            // Show the article (filling in live while streaming, editable when done).
+            // Streaming done — now editable.
             TextEditor(text: $model.markdown)
                 .font(.body)
                 .padding()

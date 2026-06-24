@@ -127,8 +127,12 @@ public struct AdaptiveContextStrategy: ContextStrategy {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count > maxLength else { return trimmed }
         let cutoff = trimmed.index(trimmed.startIndex, offsetBy: maxLength)
-        let clipped = trimmed[..<cutoff].trimmingCharacters(in: .whitespacesAndNewlines)
-        return clipped + "…"
+        var clipped = String(trimmed[..<cutoff])
+        // Prefer to end on a word boundary rather than mid-word.
+        if let lastSpace = clipped.lastIndex(where: { $0.isWhitespace }) {
+            clipped = String(clipped[..<lastSpace])
+        }
+        return clipped.trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 
     /// The always-injected "where you are" anchor (Tier 3).
