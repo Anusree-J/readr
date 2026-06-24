@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where the reader last left off in a book.
-public struct ReadingPosition: Sendable, Hashable {
+public struct ReadingPosition: Sendable, Hashable, Codable {
     public var chapterIndex: Int
     public var characterOffset: Int
 

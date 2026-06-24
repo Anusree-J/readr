@@ -1,7 +1,7 @@
 import Foundation
 
 /// A parsed book, independent of its source format (EPUB, PDF, ...).
-public struct Book: Identifiable, Hashable, Sendable {
+public struct Book: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public var metadata: BookMetadata
     public var chapters: [Chapter]
@@ -27,7 +27,7 @@ public struct Book: Identifiable, Hashable, Sendable {
     }
 }
 
-public struct BookMetadata: Hashable, Sendable {
+public struct BookMetadata: Hashable, Sendable, Codable {
     public var title: String
     public var authors: [String]
     public var language: String?
@@ -50,7 +50,7 @@ public struct BookMetadata: Hashable, Sendable {
     }
 }
 
-public struct TOCEntry: Hashable, Sendable {
+public struct TOCEntry: Hashable, Sendable, Codable {
     public var title: String
     public var chapterIndex: Int
     public var children: [TOCEntry]
@@ -62,7 +62,7 @@ public struct TOCEntry: Hashable, Sendable {
     }
 }
 
-public struct Chapter: Identifiable, Hashable, Sendable {
+public struct Chapter: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public var title: String?
     public var order: Int
@@ -77,7 +77,7 @@ public struct Chapter: Identifiable, Hashable, Sendable {
 }
 
 /// A reader's highlight, anchored to a text range.
-public struct Highlight: Identifiable, Hashable, Sendable {
+public struct Highlight: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public var bookID: UUID
     public var chapterID: UUID

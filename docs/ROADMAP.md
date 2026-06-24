@@ -13,12 +13,14 @@ highlights→article) together, per project direction.
 ## M1 — Reading (in progress)
 - [x] Library shelf + basic reader view (SwiftUI)
 - [x] Import plain-text / Markdown (parser + registry, tested)
+- [x] Import PDF via PDFKit (rejects encrypted/locked; tested on device)
 - [x] Reading position persistence (store + reader wiring)
-- [x] Highlights & notes — store/persistence logic (tested)
-- [ ] EPUB + PDF import & paginated rendering via Readium (needs Mac/Xcode)
-- [ ] Highlight/note capture UI in the reader
-- [ ] SwiftData/GRDB-backed store to replace `InMemoryLibraryStore`
-- [ ] UI test: import → library → open → resume position
+- [x] Highlights & notes — service + on-disk persistence (`FileLibraryStore`, tested)
+- [x] Highlight/note capture UI in the reader (selectable text view)
+- [x] UI test: open seeded book → navigate chapters (`-uiTestSeed`)
+- [ ] EPUB import & paginated rendering via Readium (needs Mac/Xcode)
+- [ ] Proper TOC/outline-aware chaptering for PDFs
+- [ ] iCloud-synced store (SwiftData/GRDB) to replace the JSON file store
 
 ## M2 — Ask the book
 - [ ] Provider settings: Anthropic key, OpenAI key, local model

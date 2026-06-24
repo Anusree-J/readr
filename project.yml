@@ -37,3 +37,25 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Readr
         # Allow importing book files via the file importer.
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+
+  ReadrAppUITests:
+    type: bundle.ui-testing
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - UITests
+    dependencies:
+      - target: Readr
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.readr.uitests
+        SWIFT_VERSION: "5.9"
+
+schemes:
+  Readr:
+    build:
+      targets:
+        Readr: all
+        ReadrAppUITests: [test]
+    test:
+      targets:
+        - ReadrAppUITests
