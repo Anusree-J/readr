@@ -7,9 +7,9 @@ struct ArticleComposeView: View {
     @StateObject private var model: ArticleViewModel
     @Environment(\.dismiss) private var dismiss
 
-    init(book: Book, highlights: [Highlight], provider: LLMProvider?) {
+    init(book: Book, highlights: [Highlight], resolveProvider: @escaping () -> LLMProvider?) {
         _model = StateObject(wrappedValue: ArticleViewModel(
-            book: book, highlights: highlights, provider: provider
+            book: book, highlights: highlights, resolveProvider: resolveProvider
         ))
     }
 
@@ -45,18 +45,17 @@ struct ArticleComposeView: View {
             TextEditor(text: $model.markdown)
                 .font(.body)
                 .padding()
-        } else if let error = model.errorMessage {
+        } else {
+            // No article yet: show the error (if any) plus a way to (re)compose.
             ContentUnavailableView {
-                Label("Couldn't compose", systemImage: "doc.text")
+                Label("Compose an article", systemImage: "doc.text")
             } description: {
-                Text(error)
+                Text(model.errorMessage ?? "Turn your highlights and notes into an article.")
             } actions: {
-                if model.hasHighlights && model.hasProvider {
-                    Button("Try again") { Task { await model.compose() } }
+                if model.hasHighlights {
+                    Button("Compose") { Task { await model.compose() } }
                 }
             }
-        } else {
-            ProgressView()
         }
     }
 }

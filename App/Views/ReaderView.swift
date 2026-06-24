@@ -210,7 +210,7 @@ private struct HighlightsListView: View {
                 ArticleComposeView(
                     book: book,
                     highlights: highlights,
-                    provider: model.activeProvider()
+                    resolveProvider: { model.activeProvider() }
                 )
             }
         }

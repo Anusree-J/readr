@@ -11,28 +11,29 @@ final class ArticleViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     let hasHighlights: Bool
-    let hasProvider: Bool
 
     private let book: Book
     private let highlights: [Highlight]
-    private let provider: LLMProvider?
+    /// Resolved at compose time so a provider configured/changed while the sheet
+    /// is open is picked up.
+    private let resolveProvider: () -> LLMProvider?
     private let composer = LLMArticleComposer()
 
-    init(book: Book, highlights: [Highlight], provider: LLMProvider?) {
+    init(book: Book, highlights: [Highlight], resolveProvider: @escaping () -> LLMProvider?) {
         self.book = book
         self.highlights = highlights
-        self.provider = provider
+        self.resolveProvider = resolveProvider
         self.hasHighlights = !highlights.isEmpty
-        self.hasProvider = provider != nil
     }
 
     func compose() async {
+        // Don't recompose over an existing (possibly edited) article.
         guard markdown.isEmpty, !isComposing else { return }
         guard hasHighlights else {
             errorMessage = "Highlight something first to compose an article."
             return
         }
-        guard let provider else {
+        guard let provider = resolveProvider() else {
             errorMessage = "Connect an AI provider in settings to compose articles."
             return
         }
@@ -41,6 +42,10 @@ final class ArticleViewModel: ObservableObject {
         defer { isComposing = false }
         do {
             let article = try await composer.compose(from: highlights, in: book, provider: provider)
+            guard !article.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                errorMessage = "The model returned an empty article. Try again."
+                return
+            }
             title = article.title
             markdown = article.markdown
         } catch ArticleComposerError.noHighlights {

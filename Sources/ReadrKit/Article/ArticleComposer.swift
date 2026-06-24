@@ -75,8 +75,12 @@ public struct LLMArticleComposer: ArticleComposer {
 
     static func buildPrompt(highlights: [Highlight], book: Book) -> String {
         let bullets = orderedHighlights(highlights, in: book).map { highlight -> String in
-            var line = "- \"\(highlight.quotedText)\""
-            if let note = highlight.note, !note.isEmpty { line += " — note: \(note)" }
+            // Collapse internal newlines so each highlight stays a single bullet.
+            var line = "- \"\(singleLine(highlight.quotedText))\""
+            if let rawNote = highlight.note {
+                let note = singleLine(rawNote)
+                if !note.isEmpty { line += " — note: \(note)" }
+            }
             return line
         }.joined(separator: "\n")
 
@@ -91,5 +95,11 @@ public struct LLMArticleComposer: ArticleComposer {
         Highlights and notes (in reading order):
         \(bullets)
         """
+    }
+
+    /// Collapse all internal whitespace/newlines to single spaces.
+    static func singleLine(_ text: String) -> String {
+        text.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+            .joined(separator: " ")
     }
 }

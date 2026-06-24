@@ -75,6 +75,16 @@ final class ArticleComposerTests: XCTestCase {
         XCTAssertTrue(prompt.contains("\"1984\" by George Orwell"))
     }
 
+    func testMultiLineQuoteStaysASingleBullet() {
+        let book = makeBook()
+        let highlights = [
+            highlight(chapter: book.chapters[0], lower: 0, quoted: "the clocks\nwere striking thirteen", at: 0),
+        ]
+        let prompt = LLMArticleComposer.buildPrompt(highlights: highlights, book: book)
+        XCTAssertTrue(prompt.contains("\"the clocks were striking thirteen\""))
+        XCTAssertFalse(prompt.contains("the clocks\nwere striking"), "internal newline must be collapsed")
+    }
+
     // MARK: J6 — compose returns the streamed markdown
 
     func testComposeReturnsStreamedMarkdownArticle() async throws {
