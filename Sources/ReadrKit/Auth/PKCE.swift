@@ -70,10 +70,9 @@ public struct PKCE: Sendable, Equatable {
     /// Return `count` cryptographically random bytes.
     private static func randomBytes(count: Int) -> Data {
         #if canImport(Security)
-        var bytes = [UInt8](repeating: 0, count: count)
-        let status = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
-        if status == errSecSuccess {
-            return Data(bytes)
+        var secureBytes = [UInt8](repeating: 0, count: count)
+        if SecRandomCopyBytes(kSecRandomDefault, count, &secureBytes) == errSecSuccess {
+            return Data(secureBytes)
         }
         // Fall through to the system RNG if SecRandom is unavailable.
         #endif
