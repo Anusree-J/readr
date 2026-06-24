@@ -13,6 +13,11 @@ final class AppModel: ObservableObject {
     private let parsers: BookParserRegistry
     private let highlightService = HighlightService()
 
+    /// Credential storage + the active-LLM selector (used by Settings and, from
+    /// M3, by "ask the book").
+    let credentialStore: any CredentialStore
+    let providerManager: ProviderManager
+
     init(store: (any LibraryStore)? = nil, parsers: BookParserRegistry? = nil) {
         if store == nil, ProcessInfo.processInfo.arguments.contains("-uiTestSeed") {
             let seeded = InMemoryLibraryStore()
@@ -23,6 +28,21 @@ final class AppModel: ObservableObject {
         }
         self.parsers = parsers ?? Self.makeDefaultRegistry()
         self.books = self.store.allBooks()
+
+        let credentials = Self.makeCredentialStore()
+        self.credentialStore = credentials
+        self.providerManager = ProviderManager(
+            store: credentials,
+            factory: DefaultProviderFactory.factory()
+        )
+    }
+
+    private static func makeCredentialStore() -> any CredentialStore {
+        #if canImport(Security)
+        return KeychainCredentialStore()
+        #else
+        return InMemoryCredentialStore()
+        #endif
     }
 
     /// Deterministic fixture for UI tests (seeded via the `-uiTestSeed` arg).

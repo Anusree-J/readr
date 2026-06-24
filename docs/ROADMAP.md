@@ -26,15 +26,23 @@ highlights→article) together, per project direction.
 - [ ] TOC/outline-aware chaptering for PDFs
 - [ ] iCloud-synced store (SwiftData/GRDB) to replace the JSON file store
 
-## M2 — Ask the book
-- [ ] Provider settings: Anthropic key, OpenAI key, local model
-- [ ] Keychain storage + provider switching
+## M2 — Connect an LLM (in progress)
+- [x] PKCE (S256) + OAuth client (authorize/callback/token exchange/refresh)
+- [x] Credential stores: in-memory + Keychain
+- [x] Providers: Anthropic, OpenAI, Local (Ollama) with SSE streaming
+- [x] Provider catalog + manager (selection, factory, local-mismatch guard)
+- [x] Provider settings UI: API key, OAuth sign-in, local model, model picker
+- [x] Loopback OAuth server + browser coordinator (app)
+- [ ] Verify Anthropic OAuth client id/endpoints (placeholder today)
+- [ ] Manual J5 walk on a Mac with a real provider; token-refresh-on-expiry wiring
+
+## M3 — Ask the book
 - [ ] Select text → Ask panel → streamed answer
 - [ ] Adaptive context router (Tier 1 whole-book + prompt caching)
 - [ ] RAG index build + hybrid retrieval (Tier 2) for large books
 - [ ] On-device embeddings for local mode
 
-## M3 — Highlights → article
+## M4 — Highlights → article
 - [ ] Collect & order highlights/notes
 - [ ] `ArticleComposer` → editable Markdown article
 - [ ] Export (Markdown / PDF / share sheet)

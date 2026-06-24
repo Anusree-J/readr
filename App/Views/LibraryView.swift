@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @EnvironmentObject private var model: AppModel
     @State private var isImporting = false
+    @State private var showSettings = false
 
     /// Formats Readr can currently import. EPUB/PDF are accepted here and will be
     /// handled by the Readium parser once that M1 increment lands.
@@ -48,6 +49,16 @@ struct LibraryView: View {
                         Label("Import", systemImage: "plus")
                     }
                 }
+                ToolbarItem(placement: .secondaryAction) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Label("AI Providers", systemImage: "gearshape")
+                    }
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                ProviderSettingsView(app: model)
             }
             .fileImporter(
                 isPresented: $isImporting,
