@@ -1,0 +1,69 @@
+# XcodeGen spec — run `xcodegen generate` to produce Readr.xcodeproj.
+# Requires macOS + Xcode 15+. The project is regenerated from this file, so the
+# .xcodeproj is git-ignored (see .gitignore).
+name: Readr
+
+options:
+  bundleIdPrefix: com.readr
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+
+packages:
+  # The core logic lives in the local Swift package at the repo root.
+  ReadrKit:
+    path: .
+  # EPUB reading: ZIPFoundation supplies the archive bytes; all EPUB parsing
+  # lives in ReadrKit.EPUBBookParser.
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    from: "0.9.19"
+  # Readium's paginated navigator (reflow/fonts/decorations) is an optional
+  # rendering upgrade tracked for a later milestone:
+  # ReadiumNavigator:
+  #   url: https://github.com/readium/swift-toolkit
+  #   from: "3.0.0"
+
+targets:
+  Readr:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - App
+    dependencies:
+      - package: ReadrKit
+        product: ReadrKit
+      - package: ZIPFoundation
+        product: ZIPFoundation
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.readr.app
+        GENERATE_INFOPLIST_FILE: "YES"
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        INFOPLIST_KEY_CFBundleDisplayName: Readr
+        # Allow importing book files via the file importer.
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+
+  ReadrAppUITests:
+    type: bundle.ui-testing
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - UITests
+    dependencies:
+      - target: Readr
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.readr.uitests
+        SWIFT_VERSION: "5.9"
+
+schemes:
+  Readr:
+    build:
+      targets:
+        Readr: all
+        ReadrAppUITests: [test]
+    test:
+      targets:
+        - ReadrAppUITests
