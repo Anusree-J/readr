@@ -16,9 +16,9 @@ manual journey has been walked.
 
 | Layer | Scope | Where | Runs on |
 |-------|-------|-------|---------|
-| **Unit** | Pure logic: context router, token estimate, OAuth/PKCE math, parsers, article composer prompt-building | `Tests/ReaderKitTests` | Linux + macOS CI (fast) |
-| **Integration** | Components together with fakes: import→parse→index, ask→provider (mock LLM), Keychain store, retrieval over a fixture book | `Tests/ReaderKitTests` (tagged) | macOS CI |
-| **UI** | SwiftUI flows in the app target | `ReaderAppUITests` | macOS CI (simulator) |
+| **Unit** | Pure logic: context router, token estimate, OAuth/PKCE math, parsers, article composer prompt-building | `Tests/ReadrKitTests` | Linux + macOS CI (fast) |
+| **Integration** | Components together with fakes: import→parse→index, ask→provider (mock LLM), Keychain store, retrieval over a fixture book | `Tests/ReadrKitTests` (tagged) | macOS CI |
+| **UI** | SwiftUI flows in the app target | `ReadrAppUITests` | macOS CI (simulator) |
 | **Manual** | Real providers, real books, feel & performance | checklist per release | local Mac |
 
 **Test doubles (no live network in automated tests):**
@@ -44,7 +44,7 @@ Each milestone lists the journeys it satisfies, the **tests written first**, the
 build tasks, and the exit gate.
 
 ### M0 — Foundation ✅ (done)
-Repo, docs, `ReaderKit` skeleton, context-router unit tests, CI.
+Repo, docs, `ReadrKit` skeleton, context-router unit tests, CI.
 
 ### M1 — Library & reading — *J1, J2, J3*
 **Tests first:**

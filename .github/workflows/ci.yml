@@ -7,7 +7,7 @@ on:
 
 jobs:
   reader-kit:
-    name: Build & test ReaderKit
+    name: Build & test ReadrKit
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4

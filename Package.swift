@@ -2,13 +2,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "ReaderKit",
+    name: "ReadrKit",
     platforms: [
         .iOS(.v17),
         .macOS(.v14),
     ],
     products: [
-        .library(name: "ReaderKit", targets: ["ReaderKit"]),
+        .library(name: "ReadrKit", targets: ["ReadrKit"]),
     ],
     dependencies: [
         // Rendering, RAG storage, and provider SDKs are added as the
@@ -17,13 +17,13 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "ReaderKit",
-            path: "Sources/ReaderKit"
+            name: "ReadrKit",
+            path: "Sources/ReadrKit"
         ),
         .testTarget(
-            name: "ReaderKitTests",
-            dependencies: ["ReaderKit"],
-            path: "Tests/ReaderKitTests"
+            name: "ReadrKitTests",
+            dependencies: ["ReadrKit"],
+            path: "Tests/ReadrKitTests"
         ),
     ]
 )

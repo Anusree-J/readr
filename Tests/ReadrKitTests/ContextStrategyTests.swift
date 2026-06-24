@@ -1,5 +1,5 @@
 import XCTest
-@testable import ReaderKit
+@testable import ReadrKit
 
 final class ContextStrategyTests: XCTestCase {
 

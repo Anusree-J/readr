@@ -14,7 +14,7 @@ public enum BookParserError: Error, Sendable {
 /// Turns a source file (EPUB or PDF) into a format-agnostic `Book`.
 ///
 /// The default implementation will wrap the Readium Swift toolkit. DRM-protected
-/// files are rejected with `.drmProtected` — Reader only handles books you own
+/// files are rejected with `.drmProtected` — Readr only handles books you own
 /// in a DRM-free form.
 public protocol BookParser: Sendable {
     func canParse(_ url: URL) -> Bool

@@ -1,6 +1,6 @@
 # Authentication & LLM Access
 
-Reader connects to an LLM in one of **three** ways. All three sit behind the
+Readr connects to an LLM in one of **three** ways. All three sit behind the
 `LLMProvider` protocol, so the rest of the app never knows which is active.
 
 | Mode | What the user does | Where credentials live | Network |
@@ -44,7 +44,7 @@ same shape. We mirror it.
 
 > ⚠️ **ToS caveat — call this out to users.** Driving a third-party app with a
 > *consumer subscription's* OAuth client is a gray area under provider terms,
-> even though several OSS tools do it. Reader therefore makes **BYO API key the
+> even though several OSS tools do it. Readr therefore makes **BYO API key the
 > default, fully-supported path**, and offers subscription OAuth as a clearly
 > labeled opt-in ("use your ChatGPT/Claude subscription — may be subject to the
 > provider's terms"). Local mode needs no account at all.

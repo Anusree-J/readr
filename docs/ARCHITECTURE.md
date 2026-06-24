@@ -4,12 +4,12 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ReaderApp (SwiftUI, iOS + macOS)                            │
+│  ReadrApp (SwiftUI, iOS + macOS)                            │
 │  Library · Reader view · Ask panel · Notes · Article editor  │
 └───────────────▲─────────────────────────────────────────────┘
                 │ depends on
 ┌───────────────┴─────────────────────────────────────────────┐
-│  ReaderKit (Swift Package, platform-agnostic, testable)      │
+│  ReadrKit (Swift Package, platform-agnostic, testable)      │
 │                                                              │
 │  Reader   ── BookParser (EPUB/PDF) ──▶ Book model            │
 │  Context  ── ContextStrategy (Tier 1/2/3 router)            │
@@ -20,7 +20,7 @@
 └──────────────────────────────────────────────────────────────┘
 ```
 
-The app talks only to `ReaderKit` protocols. Every external dependency (rendering
+The app talks only to `ReadrKit` protocols. Every external dependency (rendering
 engine, LLM vendor, embedding model, vector store) sits behind a protocol so it
 can be swapped or mocked.
 
@@ -56,6 +56,6 @@ behind `BookRenderer` so the UI is insulated from Readium specifics.
 
 ## Why a separate package?
 
-`ReaderKit` builds and tests on any Swift platform (including Linux CI), so the
+`ReadrKit` builds and tests on any Swift platform (including Linux CI), so the
 business logic is unit-testable without a simulator. The app target is a thin
 SwiftUI shell.

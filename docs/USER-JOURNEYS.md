@@ -1,6 +1,6 @@
 # User Journeys & Expected Behaviour
 
-These are the canonical journeys Reader must satisfy. Each has acceptance
+These are the canonical journeys Readr must satisfy. Each has acceptance
 criteria in Given/When/Then form — they are the **specification we test
 against** (see `docs/DEVELOPMENT-PLAN.md` for how). Each criterion is tagged
 with the test layer that owns it: `[unit]`, `[integration]`, `[ui]`, `[manual]`.

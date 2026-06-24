@@ -6,7 +6,7 @@ highlights→article) together, per project direction.
 ## M0 — Foundation (this scaffold)
 - [x] Repo, license, docs, architecture
 - [x] Context strategy research + decision
-- [ ] `ReaderKit` package skeleton with core protocols & models
+- [ ] `ReadrKit` package skeleton with core protocols & models
 - [ ] XcodeGen `project.yml` + SwiftUI app shell
 - [ ] CI building the package
 

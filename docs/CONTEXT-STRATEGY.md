@@ -9,7 +9,7 @@ across hosted *and* local models.
 There is no universal winner between "stuff the whole book in the prompt" and
 "retrieve relevant passages." The research consensus is that the right choice
 depends on document size, model, and budget — and a **hybrid/adaptive** system
-beats either pure approach. So Reader **routes each query** to the cheapest
+beats either pure approach. So Readr **routes each query** to the cheapest
 method that preserves quality.
 
 ```
@@ -58,8 +58,8 @@ local SQLite vector store. Nothing leaves the device.
 
 ## Implementation surface
 
-All of this lives behind `ContextStrategy` in `ReaderKit` (see
-`Sources/ReaderKit/Context/`). The reader UI just calls
+All of this lives behind `ContextStrategy` in `ReadrKit` (see
+`Sources/ReadrKit/Context/`). The reader UI just calls
 `assembleContext(for: query, in: book, selection:)` and gets a ready-to-send
 payload; the routing is invisible to callers and swappable.
 

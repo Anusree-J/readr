@@ -1,16 +1,16 @@
-# Reader
+# Readr
 
 An AI-powered, native **iOS & macOS** ebook reader — think Apple Books, but you can
 ask the book questions and turn your highlights into articles.
 
 > Status: **early scaffolding.** This repo currently contains the architecture,
-> the context-strategy research, and the core `ReaderKit` package skeleton.
+> the context-strategy research, and the core `ReadrKit` package skeleton.
 > The app is not yet buildable end-to-end. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Why
 
 When you read, you have questions. Today you copy a sentence, paste it into
-Claude/ChatGPT, and ask. Reader removes that loop: select text → ask → get an
+Claude/ChatGPT, and ask. Readr removes that loop: select text → ask → get an
 answer grounded in **the whole book**, without leaving the page. Your highlights
 and notes can also be auto-composed into a shareable article.
 
@@ -27,7 +27,7 @@ and notes can also be auto-composed into a shareable article.
 
 ## How book context works
 
-Reader uses an **adaptive tiered strategy** — small books are sent whole (with
+Readr uses an **adaptive tiered strategy** — small books are sent whole (with
 prompt caching), large books use hybrid contextual retrieval, and local mode
 always stays on-device. Full rationale and citations in
 [docs/CONTEXT-STRATEGY.md](docs/CONTEXT-STRATEGY.md).
@@ -35,7 +35,7 @@ always stays on-device. Full rationale and citations in
 ## Architecture
 
 - **SwiftUI** multiplatform app (iOS 17+ / macOS 14+).
-- **`ReaderKit`** — platform-agnostic Swift Package with the core logic (parsing,
+- **`ReadrKit`** — platform-agnostic Swift Package with the core logic (parsing,
   context router, RAG, LLM providers, article composer).
 - **Readium Swift toolkit** for EPUB/PDF rendering & annotations.
 - **SQLite** (`sqlite-vec` + FTS5) for the on-device RAG index.
@@ -60,8 +60,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ```sh
 brew install xcodegen
-xcodegen generate      # produces Reader.xcodeproj from project.yml
-open Reader.xcodeproj
+xcodegen generate      # produces Readr.xcodeproj from project.yml
+open Readr.xcodeproj
 ```
 
 The core package alone builds anywhere Swift runs:
