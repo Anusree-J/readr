@@ -15,7 +15,7 @@ public protocol LLMProvider: Sendable {
 }
 
 public struct ProviderInfo: Sendable, Hashable {
-    public enum Kind: Sendable { case anthropic, openAI, local }
+    public enum Kind: String, Sendable, Hashable, Codable { case anthropic, openAI, local }
     public var kind: Kind
     public var modelID: String
     /// Usable context budget in tokens (after reserving room for the reply).

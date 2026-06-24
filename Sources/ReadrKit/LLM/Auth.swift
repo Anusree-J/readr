@@ -1,7 +1,7 @@
 import Foundation
 
 /// Credentials for a connected provider. Persisted only in the Keychain.
-public enum Credentials: Sendable, Equatable {
+public enum Credentials: Sendable, Equatable, Codable {
     case apiKey(String)
     case oauth(accessToken: String, refreshToken: String?, expiresAt: Date?)
 
