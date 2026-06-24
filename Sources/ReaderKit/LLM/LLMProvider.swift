@@ -1,0 +1,74 @@
+import Foundation
+
+/// A chat-capable LLM, regardless of vendor or whether it runs locally.
+///
+/// Concrete implementations: `AnthropicProvider`, `OpenAIProvider`,
+/// `LocalLLMProvider`. The reader UI only ever sees this protocol.
+public protocol LLMProvider: Sendable {
+    var info: ProviderInfo { get }
+
+    /// Stream a completion for the assembled messages.
+    func stream(_ request: ChatRequest) -> AsyncThrowingStream<ChatChunk, Error>
+
+    /// Best-effort token count for routing decisions (Tier 1 vs Tier 2).
+    func countTokens(_ text: String) throws -> Int
+}
+
+public struct ProviderInfo: Sendable, Hashable {
+    public enum Kind: Sendable { case anthropic, openAI, local }
+    public var kind: Kind
+    public var modelID: String
+    /// Usable context budget in tokens (after reserving room for the reply).
+    public var contextBudget: Int
+    /// Whether the provider supports prompt caching (cheap whole-book reuse).
+    public var supportsPromptCaching: Bool
+    /// True for on-device models — enables the zero-egress privacy mode.
+    public var isLocal: Bool
+
+    public init(
+        kind: Kind,
+        modelID: String,
+        contextBudget: Int,
+        supportsPromptCaching: Bool,
+        isLocal: Bool
+    ) {
+        self.kind = kind
+        self.modelID = modelID
+        self.contextBudget = contextBudget
+        self.supportsPromptCaching = supportsPromptCaching
+        self.isLocal = isLocal
+    }
+}
+
+public struct ChatRequest: Sendable {
+    public var messages: [ChatMessage]
+    /// Marks large, stable content (e.g. a whole book) as cacheable.
+    public var cacheableSystemPrefix: String?
+    public var maxOutputTokens: Int
+
+    public init(
+        messages: [ChatMessage],
+        cacheableSystemPrefix: String? = nil,
+        maxOutputTokens: Int = 1024
+    ) {
+        self.messages = messages
+        self.cacheableSystemPrefix = cacheableSystemPrefix
+        self.maxOutputTokens = maxOutputTokens
+    }
+}
+
+public struct ChatMessage: Sendable, Hashable {
+    public enum Role: String, Sendable { case system, user, assistant }
+    public var role: Role
+    public var content: String
+
+    public init(role: Role, content: String) {
+        self.role = role
+        self.content = content
+    }
+}
+
+public struct ChatChunk: Sendable {
+    public var textDelta: String
+    public init(textDelta: String) { self.textDelta = textDelta }
+}
