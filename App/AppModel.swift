@@ -127,6 +127,43 @@ final class AppModel: ObservableObject {
         highlightsByBook[book.id] = store.highlights(for: book.id)
     }
 
+    // MARK: Ask the book (M3)
+
+    private let ragIndex = HybridRAGIndex()
+    private let embeddings = LocalEmbeddingProvider()
+
+    /// An `AskService` bound to the active provider, or nil if none is configured.
+    func makeAskService() -> AskService? {
+        let provider: LLMProvider?
+        do { provider = try providerManager.activeProvider() } catch { provider = nil }
+        guard let provider else { return nil }
+        return AskService(strategy: AdaptiveContextStrategy(index: ragIndex), provider: provider)
+    }
+
+    /// Build the retrieval index for a book if it hasn't been built yet. Cheap to
+    /// call repeatedly; the index is reused across questions.
+    func ensureIndexed(_ book: Book) async {
+        if await ragIndex.isBuilt(bookID: book.id) { return }
+        try? await ragIndex.build(for: book, embeddings: embeddings)
+    }
+
+    /// Build a `Selection` (quote + surrounding context) from a character range.
+    func makeSelection(in chapter: Chapter, range: Range<Int>) -> Selection {
+        let characters = Array(chapter.text)
+        let lower = max(0, range.lowerBound)
+        let upper = min(characters.count, range.upperBound)
+        let quoted = lower < upper ? String(characters[lower..<upper]) : ""
+        let contextLower = max(0, lower - 240)
+        let contextUpper = min(characters.count, upper + 240)
+        let surrounding = String(characters[contextLower..<contextUpper])
+        return Selection(
+            chapterID: chapter.id,
+            quotedText: quoted,
+            surroundingText: surrounding,
+            chapterTitle: chapter.title
+        )
+    }
+
     private static func message(for error: BookParserError) -> String {
         switch error {
         case .drmProtected:

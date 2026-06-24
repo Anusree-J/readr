@@ -36,11 +36,15 @@ highlights→article) together, per project direction.
 - [ ] Verify Anthropic OAuth client id/endpoints (placeholder today)
 - [ ] Manual J5 walk on a Mac with a real provider; token-refresh-on-expiry wiring
 
-## M3 — Ask the book
-- [ ] Select text → Ask panel → streamed answer
-- [ ] Adaptive context router (Tier 1 whole-book + prompt caching)
-- [ ] RAG index build + hybrid retrieval (Tier 2) for large books
-- [ ] On-device embeddings for local mode
+## M3 — Ask the book (in progress)
+- [x] Adaptive context router exercised end-to-end (Tier 1 whole-book + caching)
+- [x] RAG: chapter-aware chunking + hybrid BM25/vector retrieval + rerank
+  (`HybridRAGIndex`, in-memory)
+- [x] On-device deterministic embeddings (`LocalEmbeddingProvider`, zero-network)
+- [x] `AskService`: assemble context → stream answer → emit tier (tested)
+- [x] Select text → Ask panel → streamed answer (app)
+- [ ] SQLite (sqlite-vec + FTS5) persistence for the index (currently in-memory)
+- [ ] Citations surfaced in the Ask panel; manual J4 walk on a Mac
 
 ## M4 — Highlights → article
 - [ ] Collect & order highlights/notes

@@ -15,6 +15,8 @@ struct ReaderView: View {
     @State private var showHighlights = false
     @State private var noteDraft = ""
     @State private var pendingNoteRange: Range<Int>?
+    @State private var askSelection: Selection?
+    @State private var showAsk = false
 
     private var chapter: Chapter? {
         guard book.chapters.indices.contains(chapterIndex) else { return nil }
@@ -77,6 +79,10 @@ struct ReaderView: View {
         .sheet(isPresented: $showHighlights) {
             HighlightsListView(book: book)
         }
+        .sheet(isPresented: $showAsk) {
+            AskPanelView(app: model, book: book, selection: askSelection)
+                .environmentObject(model)
+        }
         .sheet(item: noteSheetItem) { item in
             NoteEditor(text: $noteDraft) {
                 if let chapter {
@@ -110,6 +116,10 @@ struct ReaderView: View {
                 Button {
                     pendingNoteRange = range
                 } label: { Label("Add note", systemImage: "note.text") }
+                Button {
+                    askSelection = model.makeSelection(in: chapter, range: range)
+                    showAsk = true
+                } label: { Label("Ask", systemImage: "sparkles") }
                 Spacer()
             }
             .buttonStyle(.bordered)
