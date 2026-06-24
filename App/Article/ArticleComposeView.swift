@@ -38,10 +38,12 @@ struct ArticleComposeView: View {
 
     @ViewBuilder
     private var content: some View {
-        if model.isComposing {
+        if model.isComposing && model.markdown.isEmpty {
+            // Composing, nothing streamed back yet.
             ProgressView("Composing your article…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if !model.markdown.isEmpty {
+            // Show the article (filling in live while streaming, editable when done).
             TextEditor(text: $model.markdown)
                 .font(.body)
                 .padding()

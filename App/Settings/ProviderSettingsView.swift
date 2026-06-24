@@ -80,6 +80,7 @@ struct ProviderSettingsView: View {
                     Label("Sign in with subscription", systemImage: "person.badge.key")
                 }
             }
+            .accessibilityLabel("Sign in with subscription")
             .disabled(model.isSigningIn)
         }
 
@@ -114,6 +115,7 @@ private struct APIKeyField: View {
                 onSave(key)
                 key = ""
             }
+            .accessibilityLabel("Save API key")
             .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
         }
     }
