@@ -48,8 +48,10 @@ final class LocalEmbeddingProviderTests: XCTestCase {
         let dogText = "puppies dogs bark fetch leash kennel"
         let spaceText = "planets orbit galaxies comets nebula telescope"
 
-        let dog = try XCTUnwrap(try await provider.embed([dogText]).first)
-        let space = try XCTUnwrap(try await provider.embed([spaceText]).first)
+        let dogVectors = try await provider.embed([dogText])
+        let spaceVectors = try await provider.embed([spaceText])
+        let dog = try XCTUnwrap(dogVectors.first)
+        let space = try XCTUnwrap(spaceVectors.first)
 
         let selfSim = LocalEmbeddingProvider.cosineSimilarity(dog, dog)
         let crossSim = LocalEmbeddingProvider.cosineSimilarity(dog, space)
