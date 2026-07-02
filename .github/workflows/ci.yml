@@ -20,11 +20,12 @@ jobs:
 
   reader-app:
     name: Build Readr app (iOS + macOS)
-    runs-on: macos-14
+    # macOS 15 ships Xcode 16, which reads the project format XcodeGen emits.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode_15.4.app
+      - name: Show Xcode version
+        run: xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
