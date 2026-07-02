@@ -29,7 +29,7 @@ struct ArticleComposeView: View {
                             }
                         }
                     }
-                    ToolbarItem(placement: .cancelAction) {
+                    ToolbarItem(placement: .cancellationAction) {
                         Button("Done") { dismiss() }
                     }
                 }

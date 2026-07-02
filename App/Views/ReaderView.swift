@@ -161,7 +161,7 @@ private struct NoteEditor: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save") { onSave(); dismiss() }
                     }
-                    ToolbarItem(placement: .cancelAction) {
+                    ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") { dismiss() }
                     }
                 }
