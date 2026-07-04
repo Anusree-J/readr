@@ -1,10 +1,20 @@
 name: Release
 
-# Build and publish a macOS app artifact for every version tag (v1.0.0, ...).
+# Build and publish a macOS app artifact. Two triggers:
+#  - pushing a version tag (v1.0.0, ...)
+#  - manual dispatch with a version input (the tag is then created by the
+#    release action at the dispatched commit) — needed because some git
+#    proxies can't push tags.
 # The binary is unsigned pre-1.0; users right-click -> Open on first launch.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. v1.0.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -13,6 +23,8 @@ jobs:
   macos-app:
     name: Build & publish Readr.app (macOS)
     runs-on: macos-15
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
@@ -33,9 +45,10 @@ jobs:
       - name: Zip the app
         run: |
           cd build/Build/Products/Release
-          ditto -c -k --sequesterRsrc --keepParent Readr.app Readr-macOS-${GITHUB_REF_NAME}.zip
+          ditto -c -k --sequesterRsrc --keepParent Readr.app "Readr-macOS-${VERSION}.zip"
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.VERSION }}
           files: build/Build/Products/Release/Readr-macOS-*.zip
           generate_release_notes: true
