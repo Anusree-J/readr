@@ -19,9 +19,32 @@ struct ReaderView: View {
     @State private var showAsk = false
     /// Persisted reading layout: continuous scroll, one page, or facing pages.
     @AppStorage("readerLayout") private var layoutRaw = PageLayout.scroll.rawValue
+    /// Persisted appearance: reading theme (Paper/Sepia/Night) and text size.
+    @AppStorage("readingTheme") private var themeRaw = ReadingTheme.paper.rawValue
+    @AppStorage("readingFontSize") private var fontSize = 18.0
 
     private var layout: PageLayout {
         PageLayout(rawValue: layoutRaw) ?? .scroll
+    }
+
+    /// Everything the text renderer needs, derived from the persisted
+    /// appearance settings (clamped in case stored values drift out of range).
+    private var style: ReaderStyle {
+        ReaderStyle(
+            theme: ReadingTheme(rawValue: themeRaw) ?? .paper,
+            fontSize: min(
+                max(CGFloat(fontSize), ReaderStyle.fontSizeRange.lowerBound),
+                ReaderStyle.fontSizeRange.upperBound
+            )
+        )
+    }
+
+    /// Non-nil when the book's retained source file is a PDF — rendered
+    /// natively via PDFKit instead of the text reading modes.
+    private var pdfURL: URL? {
+        guard let url = model.sourceURL(for: book),
+              url.pathExtension.lowercased() == "pdf" else { return nil }
+        return url
     }
 
     private var chapter: Chapter? {
@@ -38,11 +61,17 @@ struct ReaderView: View {
 
     var body: some View {
         Group {
-            if let chapter {
+            if let pdfURL {
+                // Native PDF rendering; selection-based Ask/highlights don't
+                // apply in PDF mode this iteration.
+                PDFReaderView(url: pdfURL)
+            } else if let chapter {
                 VStack(spacing: 0) {
                     if let title = chapter.title {
                         Text(title)
                             .font(.title3.bold())
+                            .fontDesign(.serif)
+                            .foregroundStyle(style.theme.inkColor)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal)
                             .padding(.top)
@@ -51,6 +80,7 @@ struct ReaderView: View {
                         SelectableTextView(
                             text: chapter.text,
                             highlightRanges: chapterHighlights,
+                            style: style,
                             onSelect: { selectedRange = $0 }
                         )
                         .padding()
@@ -58,12 +88,14 @@ struct ReaderView: View {
                         PagedChapterView(
                             chapter: chapter,
                             layout: layout,
+                            style: style,
                             highlightRanges: chapterHighlights,
                             onSelect: { selectedRange = $0 }
                         )
                     }
                     selectionBar(for: chapter)
                 }
+                .background(style.theme.background.ignoresSafeArea())
             } else {
                 ContentUnavailableView("No readable content", systemImage: "doc")
             }
@@ -88,6 +120,26 @@ struct ReaderView: View {
                 .disabled(chapterIndex >= book.chapters.count - 1)
             }
             ToolbarItemGroup(placement: .primaryAction) {
+                // "Aa" appearance menu, Apple-Books style: theme + text size.
+                Menu {
+                    Picker("Theme", selection: $themeRaw) {
+                        ForEach(ReadingTheme.allCases) { theme in
+                            Text(theme.displayName).tag(theme.rawValue)
+                        }
+                    }
+                    Divider()
+                    Button("Larger text") {
+                        fontSize = min(fontSize + 1, Double(ReaderStyle.fontSizeRange.upperBound))
+                    }
+                    .disabled(fontSize >= Double(ReaderStyle.fontSizeRange.upperBound))
+                    Button("Smaller text") {
+                        fontSize = max(fontSize - 1, Double(ReaderStyle.fontSizeRange.lowerBound))
+                    }
+                    .disabled(fontSize <= Double(ReaderStyle.fontSizeRange.lowerBound))
+                } label: {
+                    Label("Appearance", systemImage: "textformat.size")
+                }
+                .accessibilityLabel("Appearance")
                 // A compact menu, not a segmented control: an inline picker
                 // crowds the iPhone nav bar and pushes Highlights out of reach
                 // (caught by the UI tests).
