@@ -88,15 +88,21 @@ struct ReaderView: View {
                 .disabled(chapterIndex >= book.chapters.count - 1)
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                Picker("Layout", selection: $layoutRaw) {
-                    Label("Scroll", systemImage: "text.justify.left")
-                        .tag(PageLayout.scroll.rawValue)
-                    Label("Single page", systemImage: "doc.plaintext")
-                        .tag(PageLayout.singlePage.rawValue)
-                    Label("Two pages", systemImage: "book")
-                        .tag(PageLayout.doublePage.rawValue)
+                // A compact menu, not a segmented control: an inline picker
+                // crowds the iPhone nav bar and pushes Highlights out of reach
+                // (caught by the UI tests).
+                Menu {
+                    Picker("Reading layout", selection: $layoutRaw) {
+                        Label("Scroll", systemImage: "text.justify.left")
+                            .tag(PageLayout.scroll.rawValue)
+                        Label("Single page", systemImage: "doc.plaintext")
+                            .tag(PageLayout.singlePage.rawValue)
+                        Label("Two pages", systemImage: "book")
+                            .tag(PageLayout.doublePage.rawValue)
+                    }
+                } label: {
+                    Label("Reading layout", systemImage: "book.pages")
                 }
-                .pickerStyle(.segmented)
                 .accessibilityLabel("Reading layout")
                 Button { showHighlights = true } label: {
                     Label("Highlights", systemImage: "highlighter")
