@@ -20,7 +20,7 @@ final class ReadrAppUITests: XCTestCase {
     func testOpenSeededBookAndNavigateChapters() {
         let app = launchSeeded()
 
-        let bookCell = app.staticTexts["Sample Book"]
+        let bookCell = app.staticTexts["Sample Book"].firstMatch
         XCTAssertTrue(bookCell.waitForExistence(timeout: 10))
         bookCell.tap()
 
@@ -58,7 +58,7 @@ final class ReadrAppUITests: XCTestCase {
     // J3 — the highlights sheet opens from the reader and shows empty guidance.
     func testHighlightsSheetOpensFromReader() {
         let app = launchSeeded()
-        let bookCell = app.staticTexts["Sample Book"]
+        let bookCell = app.staticTexts["Sample Book"].firstMatch
         XCTAssertTrue(bookCell.waitForExistence(timeout: 10))
         bookCell.tap()
 
@@ -74,7 +74,7 @@ final class ReadrAppUITests: XCTestCase {
     /// Attaches a full-screen PNG to the test result bundle so CI can extract
     /// it with xcparse and publish it to the `ci-screenshots` branch.
     private func snap(_ app: XCUIApplication, _ name: String) {
-        let shot = XCUIScreen.main.screenshot()
+        let shot = app.screenshot()
         let att = XCTAttachment(screenshot: shot)
         att.name = name
         att.lifetime = .keepAlways
@@ -89,7 +89,7 @@ final class ReadrAppUITests: XCTestCase {
         let app = launchSeeded()
 
         // a. Library
-        let bookCell = app.staticTexts["Sample Book"]
+        let bookCell = app.staticTexts["Sample Book"].firstMatch
         XCTAssertTrue(bookCell.waitForExistence(timeout: 10))
         snap(app, "01-library")
 
