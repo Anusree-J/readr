@@ -22,6 +22,9 @@ struct ReaderView: View {
     /// Persisted appearance: reading theme (Paper/Sepia/Night) and text size.
     @AppStorage("readingTheme") private var themeRaw = ReadingTheme.paper.rawValue
     @AppStorage("readingFontSize") private var fontSize = 18.0
+    /// PDFs: show the original pages (native PDFKit) or the extracted text
+    /// (which keeps highlights and select-to-Ask available).
+    @AppStorage("pdfShowsOriginal") private var pdfShowsOriginal = true
 
     private var layout: PageLayout {
         PageLayout(rawValue: layoutRaw) ?? .scroll
@@ -61,9 +64,9 @@ struct ReaderView: View {
 
     var body: some View {
         Group {
-            if let pdfURL {
-                // Native PDF rendering; selection-based Ask/highlights don't
-                // apply in PDF mode this iteration.
+            if let pdfURL, pdfShowsOriginal {
+                // Native PDF pages. Highlights/Ask need text selection — the
+                // Aa menu offers "Extracted text" for that.
                 PDFReaderView(url: pdfURL)
             } else if let chapter {
                 VStack(spacing: 0) {
@@ -111,13 +114,13 @@ struct ReaderView: View {
                 }
                 .accessibilityIdentifier("prevChapter")
                 .accessibilityLabel("Previous chapter")
-                .disabled(chapterIndex == 0)
+                .disabled(chapterIndex == 0 || (pdfURL != nil && pdfShowsOriginal))
                 Button { chapterIndex = min(book.chapters.count - 1, chapterIndex + 1) } label: {
                     Image(systemName: "chevron.right")
                 }
                 .accessibilityIdentifier("nextChapter")
                 .accessibilityLabel("Next chapter")
-                .disabled(chapterIndex >= book.chapters.count - 1)
+                .disabled(chapterIndex >= book.chapters.count - 1 || (pdfURL != nil && pdfShowsOriginal))
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 // ONE "Aa" menu for all appearance — layout, theme, text size —
@@ -125,6 +128,13 @@ struct ReaderView: View {
                 // an iOS overflow menu and hide Highlights (seen in the CI
                 // screenshots), so keep the trailing bar to Aa + Highlights.
                 Menu {
+                    if pdfURL != nil {
+                        Picker("PDF display", selection: $pdfShowsOriginal) {
+                            Label("Original pages", systemImage: "doc.richtext").tag(true)
+                            Label("Extracted text", systemImage: "text.alignleft").tag(false)
+                        }
+                        Divider()
+                    }
                     Picker("Reading layout", selection: $layoutRaw) {
                         Label("Scroll", systemImage: "text.justify.left")
                             .tag(PageLayout.scroll.rawValue)

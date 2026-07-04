@@ -16,6 +16,9 @@ import AppKit
 /// hidden to avoid duplicate elements.
 struct BookCoverView: View {
     let book: Book
+    /// Pre-decoded cover artwork (from `AppModel.coverImage(for:)`, which
+    /// caches decodes) — decoding `Data` per render made shelf scrolling hitch.
+    var coverImage: PlatformImage?
     /// Optional fixed width; when nil the container (e.g. a grid cell)
     /// determines the width and the height follows from the 2:3 aspect.
     var width: CGFloat?
@@ -36,27 +39,15 @@ struct BookCoverView: View {
 
     @ViewBuilder
     private var coverContent: some View {
-        if let cover = decodedCoverImage {
-            cover
-                .resizable()
-                .scaledToFill()
+        if let coverImage {
+            #if canImport(UIKit)
+            Image(uiImage: coverImage).resizable().scaledToFill()
+            #elseif canImport(AppKit)
+            Image(nsImage: coverImage).resizable().scaledToFill()
+            #endif
         } else {
             generatedCover
         }
-    }
-
-    /// Decodes `coverImageData` with the platform image type, if possible.
-    private var decodedCoverImage: Image? {
-        guard let data = book.coverImageData else { return nil }
-        #if canImport(UIKit)
-        guard let image = UIImage(data: data) else { return nil }
-        return Image(uiImage: image)
-        #elseif canImport(AppKit)
-        guard let image = NSImage(data: data) else { return nil }
-        return Image(nsImage: image)
-        #else
-        return nil
-        #endif
     }
 
     /// A tasteful placeholder jacket: title-keyed gradient, serif title, and

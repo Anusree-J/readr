@@ -105,13 +105,25 @@ final class AppModel: ObservableObject {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
             var book = try await parsers.parse(url)
-            // Retain the original file so PDFs render natively and EPUB assets
-            // (covers, images) stay available after import.
-            if let retained = try? Self.retainSource(url, for: book.id) {
-                book.sourceFilename = retained
-            }
-            if book.coverImageData == nil {
-                book.coverImageData = Self.pdfCoverThumbnail(for: url)
+            let bookID = book.id
+            let needsCover = book.coverImageData == nil
+            // File copy + PDF thumbnail rendering happen OFF the main actor —
+            // large books would otherwise freeze the UI right after import.
+            // The security scope is still held: we await before returning.
+            let assets = await Task.detached(priority: .userInitiated) {
+                let retained = try? Self.retainSource(url, for: bookID)
+                let cover = needsCover ? Self.pdfCoverThumbnail(for: url) : nil
+                return (retained, cover)
+            }.value
+            book.sourceFilename = assets.0
+            if let cover = assets.1 { book.coverImageData = cover }
+
+            // Covers live as files, not inside library.json: the store rewrites
+            // its whole JSON on every position save, so embedded image data
+            // would make each page turn re-serialize megabytes.
+            if let cover = book.coverImageData {
+                try? Self.saveCoverFile(cover, for: book.id)
+                book.coverImageData = nil
             }
             try store.add(book)
             books = store.allBooks()
@@ -120,6 +132,42 @@ final class AppModel: ObservableObject {
         } catch {
             importError = "Couldn't import this file: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: Covers
+
+    private let coverCache = NSCache<NSUUID, PlatformImage>()
+
+    static func coversDirectory() throws -> URL {
+        let base = try FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true
+        )
+        let dir = base.appendingPathComponent("Readr/Covers", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    static func saveCoverFile(_ data: Data, for bookID: UUID) throws {
+        let url = try coversDirectory().appendingPathComponent("\(bookID.uuidString).img")
+        try data.write(to: url, options: .atomic)
+    }
+
+    /// Decoded cover artwork, cached so shelf scrolling doesn't re-decode PNGs
+    /// on every cell render. Sources: in-memory data (seeded books) or the
+    /// cover file written at import.
+    func coverImage(for book: Book) -> PlatformImage? {
+        if let cached = coverCache.object(forKey: book.id as NSUUID) { return cached }
+        var data = book.coverImageData
+        if data == nil,
+           let url = try? Self.coversDirectory()
+               .appendingPathComponent("\(book.id.uuidString).img"),
+           FileManager.default.fileExists(atPath: url.path) {
+            data = try? Data(contentsOf: url)
+        }
+        guard let data, let image = PlatformImage(data: data) else { return nil }
+        coverCache.setObject(image, forKey: book.id as NSUUID)
+        return image
     }
 
     /// Copy the imported file into the app's Books directory as `<id>.<ext>`.

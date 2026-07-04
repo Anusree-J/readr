@@ -4,10 +4,12 @@ import SwiftUI
 import UIKit
 typealias PlatformColor = UIColor
 typealias PlatformFont = UIFont
+typealias PlatformImage = UIImage
 #elseif canImport(AppKit)
 import AppKit
 typealias PlatformColor = NSColor
 typealias PlatformFont = NSFont
+typealias PlatformImage = NSImage
 #endif
 
 // MARK: - "Paper & Ink" design scheme

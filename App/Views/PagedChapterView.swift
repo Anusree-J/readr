@@ -99,7 +99,7 @@ struct PagedChapterView: View {
         let charsPerLine = pageWidth / (pointSize * 0.55)
         let lines = pageHeight / (pointSize * 1.45)
         // 0.85 safety factor so a page never overflows its frame.
-        return max(80, Int(charsPerLine * lines * 0.85))
+        return max(30, Int(charsPerLine * lines * 0.85))
     }
 
     /// First visible page index, derived from the character-offset anchor.
@@ -130,16 +130,19 @@ struct PagedChapterView: View {
             text: page.text,
             highlightRanges: highlightRanges.compactMap { range in
                 // Intersect chapter-coordinate highlights with this page, then
-                // shift into page coordinates.
-                let lower = max(range.lowerBound, page.range.lowerBound)
-                let upper = min(range.upperBound, page.range.lowerBound + page.text.count)
+                // shift into page coordinates. The origin is textStartOffset,
+                // NOT range.lowerBound — folded boundary whitespace is inside
+                // the range but not the text.
+                let origin = page.textStartOffset
+                let lower = max(range.lowerBound, origin)
+                let upper = min(range.upperBound, origin + page.text.count)
                 guard lower < upper else { return nil }
-                return (lower - page.range.lowerBound)..<(upper - page.range.lowerBound)
+                return (lower - origin)..<(upper - origin)
             },
             style: style,
             onSelect: { pageRange in
-                // Shift back into chapter coordinates.
-                let offset = page.range.lowerBound
+                // Shift back into chapter coordinates (text origin, see above).
+                let offset = page.textStartOffset
                 onSelect((pageRange.lowerBound + offset)..<(pageRange.upperBound + offset))
             }
         )

@@ -83,10 +83,10 @@ struct LibraryView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .dropDestination(for: URL.self) { urls, _ in
+        .dropDestination(for: DroppedBookFile.self) { files, _ in
             Task {
-                for url in urls {
-                    await model.importBook(at: url)
+                for file in files {
+                    await model.importBook(at: file.url)
                 }
             }
             return true
@@ -110,7 +110,7 @@ struct LibraryView: View {
             ReaderView(book: book)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                BookCoverView(book: book)
+                BookCoverView(book: book, coverImage: model.coverImage(for: book))
                 Text(book.metadata.title)
                     .font(.headline)
                     .multilineTextAlignment(.leading)
@@ -138,7 +138,29 @@ struct LibraryView: View {
     private func readingProgress(for book: Book) -> Double? {
         guard let position = model.position(for: book) else { return nil }
         let chapterCount = max(book.chapters.count, 1)
-        let fraction = Double(position.chapterIndex + 1) / Double(chapterCount)
-        return min(max(fraction, 0), 1)
+        // Chapters *before* the current one are read; merely opening chapter
+        // one is 0% (and a just-opened single-chapter book isn't "finished").
+        let fraction = Double(position.chapterIndex) / Double(chapterCount)
+        guard fraction > 0 else { return nil }
+        return min(fraction, 1)
+    }
+}
+
+
+/// A file dragged in from Finder/Files. Received as an *imported copy* in our
+/// own temp directory: drop-provided `URL`s aren't security-scoped on iOS, so
+/// reading them directly fails outside the sandbox — and the provider's inbox
+/// copy can vanish before an async import runs.
+private struct DroppedBookFile: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .item) { received in
+            let destination = FileManager.default.temporaryDirectory
+                .appendingPathComponent("readr-drop-\(UUID().uuidString)")
+                .appendingPathExtension(received.file.pathExtension)
+            try FileManager.default.copyItem(at: received.file, to: destination)
+            return Self(url: destination)
+        }
     }
 }
