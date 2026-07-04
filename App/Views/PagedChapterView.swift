@@ -20,14 +20,26 @@ struct PagedChapterView: View {
     /// Selection callback in chapter coordinates.
     let onSelect: (Range<Int>) -> Void
 
-    /// Index of the first visible page.
-    @State private var pageStart = 0
+    /// Reading position as a **character offset** into the chapter, so it
+    /// survives re-pagination (layout switches, window resizes) without
+    /// jumping — the page index is derived from it at render time.
+    @State private var anchorOffset = 0
+    @State private var cache = PaginationCache()
     @FocusState private var focused: Bool
+
+    /// Memoizes the last pagination so page turns/selection don't re-scan the
+    /// whole chapter on every body evaluation. Reference type on purpose:
+    /// mutating it during render doesn't invalidate the view.
+    private final class PaginationCache {
+        var chapterID: UUID?
+        var capacity = 0
+        var pages: [Page] = []
+    }
 
     var body: some View {
         GeometryReader { geo in
             let pages = paginate(for: geo.size)
-            let start = clampedStart(in: pages)
+            let start = startIndex(in: pages)
             let visible = visiblePages(from: start, in: pages)
 
             VStack(spacing: 8) {
@@ -56,18 +68,22 @@ struct PagedChapterView: View {
             .onKeyPress(.rightArrow) { turnPage(+1, in: pages); return .handled }
             .onKeyPress(.leftArrow) { turnPage(-1, in: pages); return .handled }
             .onAppear { focused = true }
-            .onChange(of: chapter.id) { _, _ in pageStart = 0 }
-            .onChange(of: layout) { _, _ in
-                pageStart = Paginator.spreadStart(for: pageStart, layout: layout)
-            }
+            .onChange(of: chapter.id) { _, _ in anchorOffset = 0 }
         }
     }
 
     // MARK: - Pages
 
     private func paginate(for size: CGSize) -> [Page] {
-        Paginator(capacity: Self.capacity(for: size, layout: layout))
-            .paginate(chapter.text)
+        let capacity = Self.capacity(for: size, layout: layout)
+        if cache.chapterID == chapter.id, cache.capacity == capacity {
+            return cache.pages
+        }
+        let pages = Paginator(capacity: capacity).paginate(chapter.text)
+        cache.chapterID = chapter.id
+        cache.capacity = capacity
+        cache.pages = pages
+        return pages
     }
 
     /// Conservative characters-per-page estimate from geometry + body font.
@@ -86,10 +102,11 @@ struct PagedChapterView: View {
         return max(80, Int(charsPerLine * lines * 0.85))
     }
 
-    private func clampedStart(in pages: [Page]) -> Int {
+    /// First visible page index, derived from the character-offset anchor.
+    private func startIndex(in pages: [Page]) -> Int {
         guard !pages.isEmpty else { return 0 }
-        let clamped = min(max(0, pageStart), pages.count - 1)
-        return Paginator.spreadStart(for: clamped, layout: layout)
+        let index = Paginator.pageIndex(containing: anchorOffset, in: pages)
+        return Paginator.spreadStart(for: index, layout: layout)
     }
 
     private func visiblePages(from start: Int, in pages: [Page]) -> [Page] {
@@ -100,9 +117,9 @@ struct PagedChapterView: View {
 
     private func turnPage(_ direction: Int, in pages: [Page]) {
         guard !pages.isEmpty else { return }
-        let step = layout.pagesPerSpread
-        let next = clampedStart(in: pages) + direction * step
-        pageStart = min(max(0, next), max(0, pages.count - 1))
+        let next = startIndex(in: pages) + direction * layout.pagesPerSpread
+        let clamped = min(max(0, next), pages.count - 1)
+        anchorOffset = pages[clamped].range.lowerBound
     }
 
     // MARK: - Subviews

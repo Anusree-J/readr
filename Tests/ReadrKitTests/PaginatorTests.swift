@@ -84,6 +84,35 @@ final class PaginatorTests: XCTestCase {
         XCTAssertEqual(Paginator.spreadStart(for: 5, layout: .singlePage), 5)
     }
 
+    func testLeadingWhitespaceNeverCutsWordsOrMakesBlankPages() {
+        // Regression: the word after leading whitespace is exactly `capacity`
+        // long — it must land whole on the first page, not be hard-wrapped.
+        let pages = Paginator(capacity: 10).paginate(" abcdefghij rest")
+        XCTAssertEqual(pages.first?.text, "abcdefghij")
+        XCTAssertEqual(pages.first?.range.lowerBound, 0, "range still anchors at 0")
+
+        // Regression: a run of leading whitespace must not become a blank page.
+        let indented = Paginator(capacity: 4).paginate("  abcd ef")
+        XCTAssertFalse(
+            indented.contains {
+                $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            },
+            "no whitespace-only pages"
+        )
+        for page in indented {
+            XCTAssertFalse(page.text.hasPrefix(" "), "pages start on a word")
+        }
+    }
+
+    func testTrailingWhitespaceIsFoldedIntoTheLastPage() {
+        let text = (0..<60).map { "w\($0)" }.joined(separator: " ") + "   \n"
+        let pages = Paginator(capacity: 40).paginate(text)
+        XCTAssertEqual(pages.last?.range.upperBound, text.count)
+        for i in 1..<pages.count {
+            XCTAssertEqual(pages[i].range.lowerBound, pages[i - 1].range.upperBound)
+        }
+    }
+
     func testPageLayoutSpreadSizes() {
         XCTAssertEqual(PageLayout.scroll.pagesPerSpread, 1)
         XCTAssertEqual(PageLayout.singlePage.pagesPerSpread, 1)

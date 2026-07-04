@@ -53,26 +53,33 @@ public struct Paginator: Sendable {
 
         var pages: [Page] = []
         var start = 0
+        var rangeStart = 0 // page range start, covering any folded whitespace
         while start < n {
+            // Skip whitespace so every page's text starts on a word; the
+            // skipped run stays covered by this page's range (contiguity).
+            while start < n, chars[start].isWhitespace { start += 1 }
+            if start >= n {
+                // Only trailing whitespace remained — fold it into the last page.
+                if var last = pages.last {
+                    last.range = last.range.lowerBound..<n
+                    pages[pages.count - 1] = last
+                }
+                break
+            }
+
             let hardEnd = min(start + capacity, n)
             var end = hardEnd
             if hardEnd < n && !chars[hardEnd].isWhitespace {
                 // Back up to the last whitespace so we don't cut mid-word.
                 var i = hardEnd - 1
                 while i > start, !chars[i].isWhitespace { i -= 1 }
-                // If the whole window is one giant word, hard-wrap at capacity.
-                end = i > start ? i + 1 : hardEnd
+                // Break after that whitespace; if the whole window is one giant
+                // word (no whitespace found), hard-wrap at capacity.
+                end = chars[i].isWhitespace ? i + 1 : hardEnd
             }
-            let pageText = String(chars[start..<end])
-            pages.append(Page(text: pageText, range: start..<end))
+            pages.append(Page(text: String(chars[start..<end]), range: rangeStart..<end))
             start = end
-            // Fold boundary whitespace into the previous page's range so the
-            // next page starts on a word and ranges stay contiguous.
-            while start < n, chars[start].isWhitespace { start += 1 }
-            if var last = pages.last, last.range.upperBound < start {
-                last.range = last.range.lowerBound..<start
-                pages[pages.count - 1] = last
-            }
+            rangeStart = end
         }
         return pages
     }
