@@ -138,7 +138,7 @@ final class AppModel: ObservableObject {
 
     private let coverCache = NSCache<NSUUID, PlatformImage>()
 
-    static func coversDirectory() throws -> URL {
+    nonisolated static func coversDirectory() throws -> URL {
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true
@@ -148,7 +148,7 @@ final class AppModel: ObservableObject {
         return dir
     }
 
-    static func saveCoverFile(_ data: Data, for bookID: UUID) throws {
+    nonisolated static func saveCoverFile(_ data: Data, for bookID: UUID) throws {
         let url = try coversDirectory().appendingPathComponent("\(bookID.uuidString).img")
         try data.write(to: url, options: .atomic)
     }
@@ -171,7 +171,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Copy the imported file into the app's Books directory as `<id>.<ext>`.
-    static func retainSource(_ url: URL, for bookID: UUID) throws -> String {
+    nonisolated static func retainSource(_ url: URL, for bookID: UUID) throws -> String {
         let dir = try booksDirectory()
         let filename = "\(bookID.uuidString).\(url.pathExtension.lowercased())"
         let destination = dir.appendingPathComponent(filename)
@@ -180,7 +180,7 @@ final class AppModel: ObservableObject {
         return filename
     }
 
-    static func booksDirectory() throws -> URL {
+    nonisolated static func booksDirectory() throws -> URL {
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true
@@ -199,7 +199,7 @@ final class AppModel: ObservableObject {
     }
 
     /// First-page thumbnail for PDFs (nil for other formats).
-    private static func pdfCoverThumbnail(for url: URL) -> Data? {
+    nonisolated private static func pdfCoverThumbnail(for url: URL) -> Data? {
         #if canImport(PDFKit)
         guard url.pathExtension.lowercased() == "pdf" else { return nil }
         return PDFCoverRenderer.firstPageThumbnail(url: url)
