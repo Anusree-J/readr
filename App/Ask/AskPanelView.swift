@@ -1,8 +1,9 @@
 import SwiftUI
 import ReadrKit
 
-/// "Ask the book" panel (J4): shows the selected sentence, takes a question, and
-/// streams an answer grounded in the book's context.
+/// "Ask the book" panel (J4): shows the selected sentence (when there is one —
+/// nil selection means a whole-book question), takes a question, and streams an
+/// answer grounded in the book's context.
 struct AskPanelView: View {
     let book: Book
     let selection: Selection?
@@ -58,6 +59,12 @@ struct AskPanelView: View {
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                // No selection: the panel was opened for whole-book questions —
+                // say so instead of showing an empty quote box.
+                Label("Ask anything about this book", systemImage: "book")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
 
             HStack {
@@ -68,6 +75,21 @@ struct AskPanelView: View {
                     Image(systemName: "arrow.up.circle.fill").font(.title2)
                 }
                 .disabled(vm.isStreaming || question.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            // Suggested questions get first-time users past the blank field;
+            // tapping inserts the text (still editable) rather than submitting.
+            if vm.answer.isEmpty && !vm.isStreaming {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(suggestedQuestions, id: \.self) { suggestion in
+                            Button(suggestion) { question = suggestion }
+                                .buttonStyle(.bordered)
+                                .buttonBorderShape(.capsule)
+                                .controlSize(.small)
+                        }
+                    }
+                }
             }
 
             if let tier = vm.tier {
@@ -122,6 +144,22 @@ struct AskPanelView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// Static starters, tuned to the mode: passage questions when there's a
+    /// selection, whole-book questions otherwise.
+    private var suggestedQuestions: [String] {
+        if selection != nil {
+            return [
+                "What does this passage mean?",
+                "How does this connect to the rest of the book?",
+            ]
+        }
+        return [
+            "Summarize this book",
+            "What are the key themes?",
+            "Who are the main characters?",
+        ]
     }
 
     private func submit() {
