@@ -18,17 +18,19 @@ struct PagedChapterView: View {
     /// Theme + typography used to render pages; also drives the
     /// characters-per-page capacity estimate.
     var style: ReaderStyle = ReaderStyle()
-    /// Highlight ranges in chapter coordinates.
-    let highlightRanges: [Range<Int>]
+    /// Highlights in chapter coordinates.
+    let highlights: [HighlightSpan]
     /// Inline images keyed by character offset in **chapter** coordinates.
     var inlineImages: [Int: PlatformImage] = [:]
-    /// Selection callback in chapter coordinates.
-    let onSelect: (Range<Int>) -> Void
-
     /// Reading position as a **character offset** into the chapter, so it
     /// survives re-pagination (layout switches, window resizes) without
-    /// jumping — the page index is derived from it at render time.
-    @State private var anchorOffset = 0
+    /// jumping — the page index is derived from it at render time. Owned by
+    /// the parent so it can persist the position, anchor bookmarks, and jump
+    /// programmatically (TOC / bookmarks / search / notes panel).
+    @Binding var anchorOffset: Int
+    /// Annotation-menu actions, reported in chapter coordinates.
+    var onAnnotate: (AnnotationTarget, AnnotationAction) -> Void = { _, _ in }
+
     @State private var cache = PaginationCache()
     @FocusState private var focused: Bool
 
@@ -73,7 +75,6 @@ struct PagedChapterView: View {
             .onKeyPress(.rightArrow) { turnPage(+1, in: pages); return .handled }
             .onKeyPress(.leftArrow) { turnPage(-1, in: pages); return .handled }
             .onAppear { focused = true }
-            .onChange(of: chapter.id) { _, _ in anchorOffset = 0 }
         }
     }
 
@@ -136,58 +137,86 @@ struct PagedChapterView: View {
         })
         SelectableTextView(
             text: page.text,
-            highlightRanges: highlightRanges.compactMap { range in
+            highlights: highlights.compactMap { span in
                 // Intersect chapter-coordinate highlights with this page, then
                 // shift into page coordinates. The origin is textStartOffset,
                 // NOT range.lowerBound — folded boundary whitespace is inside
                 // the range but not the text.
-                let lower = max(range.lowerBound, origin)
-                let upper = min(range.upperBound, origin + page.text.count)
+                let lower = max(span.range.lowerBound, origin)
+                let upper = min(span.range.upperBound, origin + page.text.count)
                 guard lower < upper else { return nil }
-                return (lower - origin)..<(upper - origin)
+                return HighlightSpan(
+                    id: span.id,
+                    range: (lower - origin)..<(upper - origin),
+                    color: span.color,
+                    hasNote: span.hasNote
+                )
             },
             style: style,
             inlineImages: pageImages,
-            onSelect: { pageRange in
-                // Shift back into chapter coordinates (text origin, see above).
-                let offset = page.textStartOffset
-                onSelect((pageRange.lowerBound + offset)..<(pageRange.upperBound + offset))
+            onAnnotate: { target, action in
+                onAnnotate(chapterTarget(from: target, origin: origin), action)
             }
         )
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// Shift a page-coordinate target back into chapter coordinates (text
+    /// origin — see pageView). Spans are restored from the chapter-coordinate
+    /// source list by id, so a highlight clipped at a page boundary still
+    /// reports its full range.
+    private func chapterTarget(from target: AnnotationTarget, origin: Int) -> AnnotationTarget {
+        switch target {
+        case let .selection(range):
+            return .selection((range.lowerBound + origin)..<(range.upperBound + origin))
+        case let .span(span):
+            if let full = highlights.first(where: { $0.id == span.id }) {
+                return .span(full)
+            }
+            var shifted = span
+            shifted.range = (span.range.lowerBound + origin)..<(span.range.upperBound + origin)
+            return .span(shifted)
+        }
+    }
+
     @ViewBuilder
     private func pageBar(start: Int, pages: [Page]) -> some View {
-        HStack {
+        HStack(spacing: 16) {
             Button { turnPage(-1, in: pages) } label: {
                 Image(systemName: "arrow.left")
             }
+            .help("Previous page (←)")
             .accessibilityLabel("Previous page")
             .disabled(start == 0)
 
             Spacer()
             if !pages.isEmpty {
                 let last = min(start + layout.pagesPerSpread, pages.count)
-                Text(
-                    layout == .doublePage && last - start > 1
-                        ? "Pages \(start + 1)–\(last) of \(pages.count)"
-                        : "Page \(start + 1) of \(pages.count)"
+                let pageText = layout == .doublePage && last - start > 1
+                    ? "Pages \(start + 1)–\(last) of \(pages.count)"
+                    : "Page \(start + 1) of \(pages.count)"
+                // "min left" from the top of the visible spread — the same
+                // anchor the parent persists.
+                let minutes = ReadingTimeEstimator().minutesLeft(
+                    inChapterText: chapter.text,
+                    fromCharacterOffset: pages[start].textStartOffset
                 )
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+                Text(minutes > 0 ? "\(pageText) · ~\(minutes) min left in chapter" : pageText)
+                    .font(.footnote)
+                    .foregroundStyle(style.theme.inkColor.opacity(0.55))
+                    .monospacedDigit()
             }
             Spacer()
 
             Button { turnPage(+1, in: pages) } label: {
                 Image(systemName: "arrow.right")
             }
+            .help("Next page (→)")
             .accessibilityLabel("Next page")
             .disabled(pages.isEmpty || start + layout.pagesPerSpread >= pages.count)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.borderless)
         .tint(AppTheme.accent)
         .padding(.bottom, 6)
     }
