@@ -292,24 +292,31 @@ struct ReaderView: View {
             .help("Next chapter")
             .disabled(chapterIndex >= book.chapters.count - 1 || isPDFOriginal)
 
+            #if os(macOS)
             if !isPDFOriginal {
                 tocButton
                 bookmarksMenu
             }
+            #endif
         }
-        // Lesson from v1: iOS nav bars silently drop trailing items past the
-        // first few, so keep at most TWO always-visible trailing buttons —
-        // Appearance and Notes (UI tests tap `reader.notes` directly). Search
-        // and Ask fold into the overflow (secondaryAction) menu on iOS;
-        // keyboard shortcuts keep working from there. macOS has room for all.
+        // Lesson from v1 (twice-observed in CI): the iPhone nav bar silently
+        // collapses trailing items past TWO — and a secondaryAction group's
+        // "…" button itself counts as one. So iOS gets exactly Appearance +
+        // Notes up top (UI tests tap `reader.notes` directly) and everything
+        // else lives in the bottom bar, Apple-Books style. macOS has room.
         #if os(iOS)
         ToolbarItemGroup(placement: .primaryAction) {
             appearanceButton
             notesButton
         }
-        ToolbarItemGroup(placement: .secondaryAction) {
+        ToolbarItemGroup(placement: .bottomBar) {
             if !isPDFOriginal {
+                tocButton
+                bookmarksMenu
+                Spacer()
                 searchButton
+            } else {
+                Spacer()
             }
             askButton
         }
