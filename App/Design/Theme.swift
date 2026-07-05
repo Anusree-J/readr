@@ -1,4 +1,5 @@
 import SwiftUI
+import ReadrKit
 
 #if canImport(UIKit)
 import UIKit
@@ -19,8 +20,9 @@ typealias PlatformImage = NSImage
 // here — never hard-code them in views.
 
 enum AppTheme {
-    /// Warm amber, like a leather bookmark. The app-wide accent.
-    static let accent = Color(red: 0.78, green: 0.55, blue: 0.18)
+    /// Warm amber, like a leather bookmark. The app-wide accent — keep in sync
+    /// with Assets.xcassets/AccentColor and the app icon spark (#DE9E36).
+    static let accent = Color(red: 0.87, green: 0.62, blue: 0.21)
 
     /// Cover art corner radius and shadow, shared by shelf and detail views.
     static let coverRadius: CGFloat = 6
@@ -75,13 +77,30 @@ enum ReadingTheme: String, CaseIterable, Codable, Identifiable {
 
     var inkColor: Color { Color(ink) }
 
-    var highlight: PlatformColor {
-        switch self {
-        case .paper, .sepia:
-            return PlatformColor.systemYellow.withAlphaComponent(0.35)
-        case .night:
-            return PlatformColor.systemYellow.withAlphaComponent(0.25)
+    /// Legacy single-color marker (yellow); prefer `marker(_:)`.
+    var highlight: PlatformColor { marker(.yellow) }
+
+    /// The rendered background color for a highlight marker in this theme.
+    /// Night dims the alpha so marked text stays readable on dark paper.
+    func marker(_ color: ReadrKit.HighlightColor) -> PlatformColor {
+        let alpha: CGFloat = self == .night ? 0.28 : 0.35
+        return Self.markerBase(color).withAlphaComponent(alpha)
+    }
+
+    /// Solid swatch color for UI (color dots in the popover/notes panel).
+    static func markerBase(_ color: ReadrKit.HighlightColor) -> PlatformColor {
+        switch color {
+        case .yellow: return PlatformColor.systemYellow
+        case .green: return PlatformColor.systemGreen
+        case .blue: return PlatformColor.systemBlue
+        case .pink: return PlatformColor.systemPink
+        case .purple: return PlatformColor.systemPurple
         }
+    }
+
+    /// SwiftUI swatch for a marker color.
+    static func markerSwatch(_ color: ReadrKit.HighlightColor) -> Color {
+        Color(markerBase(color))
     }
 }
 

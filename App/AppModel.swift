@@ -7,6 +7,9 @@ import ReadrKit
 final class AppModel: ObservableObject {
     @Published private(set) var books: [Book] = []
     @Published private(set) var highlightsByBook: [UUID: [Highlight]] = [:]
+    @Published private(set) var pdfHighlightsByBook: [UUID: [PDFHighlight]] = [:]
+    @Published private(set) var bookmarksByBook: [UUID: [Bookmark]] = [:]
+    @Published private(set) var statesByBook: [UUID: BookState] = [:]
     @Published var importError: String?
 
     private let store: any LibraryStore
@@ -28,6 +31,9 @@ final class AppModel: ObservableObject {
         }
         self.parsers = parsers ?? Self.makeDefaultRegistry()
         self.books = self.store.allBooks()
+        for book in self.books {
+            statesByBook[book.id] = self.store.bookState(for: book.id)
+        }
 
         let credentials = Self.makeCredentialStore()
         self.credentialStore = credentials
@@ -126,6 +132,10 @@ final class AppModel: ObservableObject {
                 book.coverImageData = nil
             }
             try store.add(book)
+            var state = store.bookState(for: book.id) ?? BookState()
+            state.addedAt = Date()
+            try? store.saveBookState(state, for: book.id)
+            statesByBook[book.id] = state
             books = store.allBooks()
         } catch let error as BookParserError {
             importError = Self.message(for: error)
@@ -245,6 +255,27 @@ final class AppModel: ObservableObject {
         #endif
     }
 
+    // MARK: Removal
+
+    /// Deletes a book everywhere: library entry (with its positions and
+    /// annotations), the retained source file, and the cover file.
+    func removeBook(_ book: Book) {
+        try? store.removeBook(id: book.id)
+        if let source = sourceURL(for: book) {
+            try? FileManager.default.removeItem(at: source)
+        }
+        if let cover = try? Self.coversDirectory()
+            .appendingPathComponent("\(book.id.uuidString).img") {
+            try? FileManager.default.removeItem(at: cover)
+        }
+        coverCache.removeObject(forKey: book.id as NSUUID)
+        highlightsByBook[book.id] = nil
+        pdfHighlightsByBook[book.id] = nil
+        bookmarksByBook[book.id] = nil
+        statesByBook[book.id] = nil
+        books = store.allBooks()
+    }
+
     // MARK: Reading position
 
     func position(for book: Book) -> ReadingPosition? {
@@ -253,6 +284,109 @@ final class AppModel: ObservableObject {
 
     func savePosition(_ position: ReadingPosition, for book: Book) {
         try? store.savePosition(position, for: book.id)
+    }
+
+    // MARK: Book state (Home / Finished)
+
+    func bookState(for book: Book) -> BookState? {
+        if let cached = statesByBook[book.id] { return cached }
+        let loaded = store.bookState(for: book.id)
+        statesByBook[book.id] = loaded
+        return loaded
+    }
+
+    /// Record that the reader opened this book (drives "Continue Reading").
+    func markOpened(_ book: Book) {
+        var state = bookState(for: book) ?? BookState()
+        state.lastOpenedAt = Date()
+        try? store.saveBookState(state, for: book.id)
+        statesByBook[book.id] = state
+    }
+
+    func setFinished(_ finished: Bool, for book: Book) {
+        var state = bookState(for: book) ?? BookState()
+        state.finishedAt = finished ? Date() : nil
+        try? store.saveBookState(state, for: book.id)
+        statesByBook[book.id] = state
+    }
+
+    /// Books to resume, most recently opened first (unfinished only).
+    var continueReading: [Book] {
+        books
+            .filter { statesByBook[$0.id]?.lastOpenedAt != nil }
+            .filter { statesByBook[$0.id]?.isFinished != true }
+            .sorted {
+                (statesByBook[$0.id]?.lastOpenedAt ?? .distantPast)
+                    > (statesByBook[$1.id]?.lastOpenedAt ?? .distantPast)
+            }
+    }
+
+    /// Most recently imported books first (books without a recorded addedAt
+    /// keep library order at the end).
+    var recentlyAdded: [Book] {
+        books.sorted {
+            (statesByBook[$0.id]?.addedAt ?? .distantPast)
+                > (statesByBook[$1.id]?.addedAt ?? .distantPast)
+        }
+    }
+
+    /// True when the book's retained source is a PDF (native PDF reading).
+    func isPDF(_ book: Book) -> Bool {
+        book.sourceFilename?.lowercased().hasSuffix(".pdf") == true
+    }
+
+    // MARK: Bookmarks
+
+    func bookmarks(for book: Book) -> [Bookmark] {
+        if let cached = bookmarksByBook[book.id] { return cached }
+        let loaded = store.bookmarks(for: book.id)
+        bookmarksByBook[book.id] = loaded
+        return loaded
+    }
+
+    func addBookmark(_ bookmark: Bookmark) {
+        try? store.addBookmark(bookmark)
+        bookmarksByBook[bookmark.bookID] = store.bookmarks(for: bookmark.bookID)
+    }
+
+    func removeBookmark(_ bookmark: Bookmark) {
+        try? store.removeBookmark(id: bookmark.id)
+        bookmarksByBook[bookmark.bookID] = store.bookmarks(for: bookmark.bookID)
+    }
+
+    // MARK: PDF highlights
+
+    func pdfHighlights(for book: Book) -> [PDFHighlight] {
+        if let cached = pdfHighlightsByBook[book.id] { return cached }
+        let loaded = store.pdfHighlights(for: book.id)
+        pdfHighlightsByBook[book.id] = loaded
+        return loaded
+    }
+
+    func addPDFHighlight(_ highlight: PDFHighlight) {
+        try? store.addPDFHighlight(highlight)
+        pdfHighlightsByBook[highlight.bookID] = store.pdfHighlights(for: highlight.bookID)
+    }
+
+    func updatePDFHighlight(_ highlight: PDFHighlight) {
+        try? store.updatePDFHighlight(highlight)
+        pdfHighlightsByBook[highlight.bookID] = store.pdfHighlights(for: highlight.bookID)
+    }
+
+    func removePDFHighlight(_ highlight: PDFHighlight) {
+        try? store.removePDFHighlight(id: highlight.id)
+        pdfHighlightsByBook[highlight.bookID] = store.pdfHighlights(for: highlight.bookID)
+    }
+
+    // MARK: Export
+
+    /// Markdown for all of a book's annotations, or nil when it has none.
+    func annotationsMarkdown(for book: Book) -> String? {
+        AnnotationMarkdownExporter().markdown(
+            book: book,
+            highlights: highlights(for: book),
+            pdfHighlights: pdfHighlights(for: book)
+        )
     }
 
     // MARK: Highlights
@@ -264,16 +398,32 @@ final class AppModel: ObservableObject {
         return loaded
     }
 
-    func addHighlight(in book: Book, chapter: Chapter, range: Range<Int>, note: String? = nil) {
+    @discardableResult
+    func addHighlight(
+        in book: Book,
+        chapter: Chapter,
+        range: Range<Int>,
+        note: String? = nil,
+        color: HighlightColor = .yellow
+    ) -> Highlight? {
         do {
-            let highlight = try highlightService.makeHighlight(
+            var highlight = try highlightService.makeHighlight(
                 in: book, chapter: chapter, range: range, note: note, createdAt: Date()
             )
+            highlight.color = color
             try store.addHighlight(highlight)
             highlightsByBook[book.id] = store.highlights(for: book.id)
+            return highlight
         } catch {
             // Empty selection or persistence error — nothing to add.
+            return nil
         }
+    }
+
+    /// Persist note/color edits to an existing highlight.
+    func updateHighlight(_ highlight: Highlight) {
+        try? store.updateHighlight(highlight)
+        highlightsByBook[highlight.bookID] = store.highlights(for: highlight.bookID)
     }
 
     func removeHighlight(_ highlight: Highlight, in book: Book) {
