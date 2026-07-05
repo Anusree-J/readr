@@ -62,8 +62,21 @@ struct ReaderView: View {
         HighlightColor(rawValue: lastHighlightColorRaw) ?? .yellow
     }
 
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
     private var layout: PageLayout {
-        PageLayout(rawValue: layoutRaw) ?? .scroll
+        let stored = PageLayout(rawValue: layoutRaw) ?? .scroll
+        #if os(iOS)
+        // A facing-page spread on a compact phone yields one-word columns
+        // (seen in the CI screenshots) — render single pages there while
+        // keeping the stored preference for iPad/macOS widths.
+        if stored == .doublePage, horizontalSizeClass == .compact {
+            return .singlePage
+        }
+        #endif
+        return stored
     }
 
     /// Everything the text renderer needs, derived from the persisted

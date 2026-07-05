@@ -41,7 +41,14 @@ struct HomeView: View {
             }
         }
         .background(theme.background)
+        // The serif in-content "Home" header IS the title; an empty nav title
+        // avoids the doubled "Home / Home" seen in the CI screenshots. macOS
+        // keeps a window title for Mission Control/window menus.
+        #if os(iOS)
+        .navigationTitle("")
+        #else
         .navigationTitle("Home")
+        #endif
     }
 
     /// Serif screen header with the shared settings/Import… buttons (the
