@@ -51,16 +51,13 @@ final class ArticleViewModel: ObservableObject {
         isComposing = true
         defer { isComposing = false }
 
-        var input = highlights
-        let trimmedGuidance = guidance.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedGuidance.isEmpty {
-            input.append(Self.guidanceHighlight(trimmedGuidance, bookID: book.id))
-        }
-
         do {
             // Append deltas live so the studio fills in as the article streams.
+            // Guidance travels through the composer's dedicated parameter (it
+            // renders as its own labeled prompt section, never a highlight);
+            // the composer treats nil/whitespace-only guidance as absent.
             for try await delta in composer.composeStreaming(
-                from: input, in: book, provider: provider
+                from: highlights, in: book, guidance: guidance, provider: provider
             ) {
                 markdown += delta
             }
@@ -80,21 +77,5 @@ final class ArticleViewModel: ObservableObject {
             markdown = ""
             errorMessage = error.localizedDescription
         }
-    }
-
-    /// `LLMArticleComposer` has no guidance parameter, so reader guidance rides
-    /// along as a trailing synthetic "highlight": the note carries an explicit
-    /// instruction (flagged as not-a-quotation), and its unknown chapterID +
-    /// maximal range sort it after every real highlight in the composer's
-    /// reading-order prompt (see `LLMArticleComposer.orderedHighlights`).
-    private static func guidanceHighlight(_ guidance: String, bookID: UUID) -> Highlight {
-        Highlight(
-            bookID: bookID,
-            chapterID: UUID(),
-            range: (Int.max - 1)..<Int.max,
-            quotedText: "",
-            note: "Instruction from the reader about the article itself (not a quotation): \(guidance)",
-            createdAt: Date()
-        )
     }
 }

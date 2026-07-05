@@ -80,6 +80,17 @@ Goal: the best reader app for the Mac — nobody goes back to Apple Books.
 - [ ] Notes panel (inspector) + Markdown export + Article studio
 - [ ] UI tests + screenshot verification of every new surface
 
+### Deferred v2 review cleanups (tracked, deliberately not blocking v2.0)
+- Unify the three note-editor sheets and the two annotation-popover hosting
+  stacks (text vs PDF) behind shared helpers
+- Move the notes-panel reading-order sort next to `AnnotationMarkdownExporter`
+  so review and export can't drift
+- Make `Selection.chapterID` a locator enum (chapter vs PDF page) instead of a
+  synthetic UUID for PDF selections
+- Structural ⌘F/⌘D command routing (host-owned toolbar dispatching to the
+  active reading surface) instead of per-mode toolbar coordination
+- Shared snippet/excerpt helper (search results, bookmarks, PDF search)
+
 ### Post-v2 (from the research; not scheduled)
 - Reading stats, streaks, shareable wrap-ups; measured reading speed
 - Daily Review (spaced repetition over highlights)
