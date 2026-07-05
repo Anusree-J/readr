@@ -41,6 +41,10 @@ struct PagedChapterView: View {
         var chapterID: UUID?
         var capacity = 0
         var pages: [Page] = []
+        /// Words from the start of each page to the chapter's end (index-
+        /// aligned with `pages`). Computed once per pagination so the page
+        /// bar's "min left" never re-scans the chapter text in body.
+        var remainingWords: [Int] = []
     }
 
     var body: some View {
@@ -89,7 +93,29 @@ struct PagedChapterView: View {
         cache.chapterID = chapter.id
         cache.capacity = capacity
         cache.pages = pages
+        // Suffix-sum per-page word counts (pages break on whitespace, so the
+        // sum matches counting the chapter once). One O(chapter) pass here
+        // instead of one per render in the page bar.
+        var remaining = [Int](repeating: 0, count: pages.count)
+        var total = 0
+        for index in pages.indices.reversed() {
+            total += ReadingTimeEstimator.wordCount(in: pages[index].text)
+            remaining[index] = total
+        }
+        cache.remainingWords = remaining
         return pages
+    }
+
+    /// "min left" from the top of the visible spread, derived from the cached
+    /// word counts. Mirrors `ReadingTimeEstimator.minutes(for:)`: round up,
+    /// minimum 1 while words remain.
+    private func minutesLeft(fromPage start: Int) -> Int {
+        guard cache.remainingWords.indices.contains(start) else { return 0 }
+        let words = cache.remainingWords[start]
+        guard words > 0 else { return 0 }
+        return max(
+            1, Int((Double(words) / ReadingTimeEstimator.defaultWordsPerMinute).rounded(.up))
+        )
     }
 
     /// Conservative characters-per-page estimate from geometry + the reader
@@ -197,11 +223,9 @@ struct PagedChapterView: View {
                     ? "Pages \(start + 1)–\(last) of \(pages.count)"
                     : "Page \(start + 1) of \(pages.count)"
                 // "min left" from the top of the visible spread — the same
-                // anchor the parent persists.
-                let minutes = ReadingTimeEstimator().minutesLeft(
-                    inChapterText: chapter.text,
-                    fromCharacterOffset: pages[start].textStartOffset
-                )
+                // anchor the parent persists. Cached per pagination; scanning
+                // chapter.text here would run on every body evaluation.
+                let minutes = minutesLeft(fromPage: start)
                 Text(minutes > 0 ? "\(pageText) · ~\(minutes) min left in chapter" : pageText)
                     .font(.footnote)
                     .foregroundStyle(style.theme.inkColor.opacity(0.55))

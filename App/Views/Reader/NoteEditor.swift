@@ -8,6 +8,11 @@ struct NoteEditor: View {
     let quotedText: String
     @Binding var text: String
     var onSave: () -> Void
+    /// Runs when Cancel is pressed. Create-mode hosts pass a closure that
+    /// removes the highlight they just created for this note — otherwise a
+    /// cancelled note strands a highlight the reader never asked to keep.
+    /// Nil for plain edits of an existing highlight's note.
+    var onCancel: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -37,7 +42,7 @@ struct NoteEditor: View {
                     Button("Save") { onSave(); dismiss() }
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { onCancel?(); dismiss() }
                 }
             }
         }

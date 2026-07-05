@@ -32,6 +32,18 @@ struct ReaderView: View {
     /// Highlight whose note is being edited; drives the NoteEditor sheet.
     @State private var editingNote: Highlight?
     @State private var noteDraft = ""
+    /// Highlight created implicitly by the Note action (create mode). Cancel
+    /// deletes exactly this one so dismissing the editor doesn't strand a
+    /// highlight the reader never asked to keep.
+    @State private var noteFlowCreatedHighlightID: UUID?
+    /// In-flight debounced position save (offset-only page turns).
+    @State private var savePositionTask: Task<Void, Never>?
+    /// Scroll mode: character offset the text view should scroll to (set by
+    /// `jump`, cleared by SelectableTextView once performed).
+    @State private var scrollTarget: Int?
+    /// Whole-chapter "min left" for the scroll footer. Word-counting is
+    /// O(chapter length), so it runs on chapter change — never in body.
+    @State private var minutesCache: (chapterID: UUID, minutes: Int)?
 
     /// Persisted reading layout: continuous scroll, one page, or facing pages.
     @AppStorage("readerLayout") private var layoutRaw = PageLayout.scroll.rawValue
@@ -41,6 +53,14 @@ struct ReaderView: View {
     /// PDFs: show the original pages (native PDFKit) or the extracted text
     /// (which keeps text-mode highlights and layouts available).
     @AppStorage("pdfShowsOriginal") private var pdfShowsOriginal = true
+    /// Most recent marker color, shared with the PDF reader (same key) so a
+    /// new highlight anywhere defaults to the reader's last choice.
+    @AppStorage("lastHighlightColor") private var lastHighlightColorRaw
+        = HighlightColor.yellow.rawValue
+
+    private var lastHighlightColor: HighlightColor {
+        HighlightColor(rawValue: lastHighlightColorRaw) ?? .yellow
+    }
 
     private var layout: PageLayout {
         PageLayout(rawValue: layoutRaw) ?? .scroll
@@ -86,12 +106,27 @@ struct ReaderView: View {
                     .environmentObject(model)
             }
             .sheet(item: $editingNote) { highlight in
-                NoteEditor(quotedText: highlight.quotedText, text: $noteDraft) {
-                    var updated = highlight
-                    let trimmed = noteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    updated.note = trimmed.isEmpty ? nil : trimmed
-                    model.updateHighlight(updated)
-                }
+                NoteEditor(
+                    quotedText: highlight.quotedText,
+                    text: $noteDraft,
+                    onSave: {
+                        var updated = highlight
+                        let trimmed = noteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                        updated.note = trimmed.isEmpty ? nil : trimmed
+                        model.updateHighlight(updated)
+                        noteFlowCreatedHighlightID = nil
+                    },
+                    // Cancelling a note on a highlight that was created just
+                    // for this note flow removes it again — but cancelling an
+                    // edit of an existing highlight's note must keep the
+                    // highlight.
+                    onCancel: noteFlowCreatedHighlightID == highlight.id
+                        ? {
+                            model.removeHighlight(highlight, in: book)
+                            noteFlowCreatedHighlightID = nil
+                        }
+                        : nil
+                )
             }
             .inspector(isPresented: $showNotes) {
                 NotesPanel(
@@ -108,20 +143,36 @@ struct ReaderView: View {
                 )
                 .inspectorColumnWidth(min: 280, ideal: 340, max: 480)
             }
-            .onAppear(perform: restoreOnce)
+            .onAppear {
+                restoreOnce()
+                updateMinutesCache()
+            }
+            .onDisappear {
+                // Flush the debounced page-turn save — closing the reader
+                // must never lose the last position.
+                savePositionTask?.cancel()
+                savePositionTask = nil
+                saveTextPosition(chapterIndex: chapterIndex, characterOffset: pagedAnchor)
+            }
             .onChange(of: chapterIndex) { _, newValue in
-                model.savePosition(
-                    ReadingPosition(chapterIndex: newValue, characterOffset: pagedAnchor),
-                    for: book
-                )
+                // Chapter turns are rare — save immediately, and drop any
+                // pending offset-only save (its offset belongs to the old
+                // chapter).
+                savePositionTask?.cancel()
+                savePositionTask = nil
+                saveTextPosition(chapterIndex: newValue, characterOffset: pagedAnchor)
+                updateMinutesCache()
             }
             .onChange(of: pagedAnchor) { _, newValue in
-                // Persist every page turn — turns are user-paced and the store
-                // is cheap JSON, so no debounce is needed (never per-frame).
-                model.savePosition(
-                    ReadingPosition(chapterIndex: chapterIndex, characterOffset: newValue),
-                    for: book
-                )
+                // Page turns come in bursts and every save rewrites the whole
+                // library JSON — debounce offset-only saves. Chapter changes
+                // and onDisappear flush immediately.
+                savePositionTask?.cancel()
+                savePositionTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    guard !Task.isCancelled else { return }
+                    saveTextPosition(chapterIndex: chapterIndex, characterOffset: newValue)
+                }
             }
             // Build the retrieval index in the background when the book opens
             // so the first "ask" is fast. Safe to call repeatedly.
@@ -164,6 +215,7 @@ struct ReaderView: View {
                     highlights: spans,
                     style: style,
                     inlineImages: images,
+                    scrollToOffset: $scrollTarget,
                     onAnnotate: { target, action in
                         handleAnnotation(in: chapter, target: target, action: action)
                     }
@@ -192,15 +244,31 @@ struct ReaderView: View {
 
     /// Scroll mode has no page anchor, so the estimate covers the whole
     /// chapter (see docs/DESIGN.md — "in scroll mode base it on chapter start").
+    /// Reads `minutesCache` (refreshed on appear/chapter change) because
+    /// word-counting the chapter in body would rescan it on every render.
     private func scrollFooter(for chapter: Chapter) -> some View {
-        let minutes = ReadingTimeEstimator().minutesLeft(
-            inChapterText: chapter.text, fromCharacterOffset: 0
-        )
+        let minutes = minutesCache?.chapterID == chapter.id
+            ? (minutesCache?.minutes ?? 0)
+            : 0
         return Text(minutes > 0 ? "~\(minutes) min left in chapter" : "")
             .font(.footnote)
             .foregroundStyle(style.theme.inkColor.opacity(0.55))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
+    }
+
+    private func updateMinutesCache() {
+        guard let chapter else {
+            minutesCache = nil
+            return
+        }
+        guard minutesCache?.chapterID != chapter.id else { return }
+        minutesCache = (
+            chapterID: chapter.id,
+            minutes: ReadingTimeEstimator().minutesLeft(
+                inChapterText: chapter.text, fromCharacterOffset: 0
+            )
+        )
     }
 
     // MARK: - Toolbar
@@ -229,6 +297,23 @@ struct ReaderView: View {
                 bookmarksMenu
             }
         }
+        // Lesson from v1: iOS nav bars silently drop trailing items past the
+        // first few, so keep at most TWO always-visible trailing buttons —
+        // Appearance and Notes (UI tests tap `reader.notes` directly). Search
+        // and Ask fold into the overflow (secondaryAction) menu on iOS;
+        // keyboard shortcuts keep working from there. macOS has room for all.
+        #if os(iOS)
+        ToolbarItemGroup(placement: .primaryAction) {
+            appearanceButton
+            notesButton
+        }
+        ToolbarItemGroup(placement: .secondaryAction) {
+            if !isPDFOriginal {
+                searchButton
+            }
+            askButton
+        }
+        #else
         ToolbarItemGroup(placement: .primaryAction) {
             if !isPDFOriginal {
                 searchButton
@@ -237,6 +322,7 @@ struct ReaderView: View {
             askButton
             notesButton
         }
+        #endif
     }
 
     private var tocButton: some View {
@@ -394,12 +480,28 @@ struct ReaderView: View {
         guard book.chapters.indices.contains(index) else { return }
         pagedAnchor = max(0, offset)
         chapterIndex = index
+        if layout == .scroll {
+            // Scroll mode has no anchor binding into the text view — hand it
+            // the offset so search hits / bookmarks / notes-panel jumps
+            // actually scroll (the text view clears it once performed).
+            scrollTarget = max(0, offset)
+        }
         // Same-chapter jumps don't fire onChange(of: chapterIndex) — persist
         // explicitly (duplicate saves are harmless).
-        model.savePosition(
-            ReadingPosition(chapterIndex: index, characterOffset: max(0, offset)),
-            for: book
-        )
+        savePositionTask?.cancel()
+        saveTextPosition(chapterIndex: index, characterOffset: offset)
+    }
+
+    /// Persist the text-mode position, PRESERVING the PDF page: both modes
+    /// share one `ReadingPosition` record per book, so rebuilding it from
+    /// scratch here would wipe the reader's place in the original PDF pages.
+    /// (`PDFReaderController` does the mirror-image preservation for the
+    /// chapter/offset fields.)
+    private func saveTextPosition(chapterIndex: Int, characterOffset: Int) {
+        var position = model.position(for: book) ?? ReadingPosition(chapterIndex: 0)
+        position.chapterIndex = chapterIndex
+        position.characterOffset = max(0, characterOffset)
+        model.savePosition(position, for: book)
     }
 
     /// Restore once; later re-appears (e.g. after dismissing a sheet) must not
@@ -454,12 +556,14 @@ struct ReaderView: View {
     }
 
     /// ~60 characters of context starting at the bookmarked position.
+    /// Sliced with `String.Index` — materializing `Array(chapter.text)` would
+    /// copy the whole chapter for a 60-character snippet.
     private func bookmarkSnippet(of chapter: Chapter, at offset: Int, length: Int = 60) -> String {
-        let characters = Array(chapter.text)
-        guard !characters.isEmpty else { return "" }
-        let start = min(max(0, offset), characters.count - 1)
-        let end = min(characters.count, start + length)
-        return String(characters[start..<end])
+        let text = chapter.text
+        guard let start = text.index(
+            text.startIndex, offsetBy: max(0, offset), limitedBy: text.endIndex
+        ), start < text.endIndex else { return "" }
+        return String(text[start...].prefix(length))
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespaces)
     }
@@ -490,6 +594,9 @@ struct ReaderView: View {
     ) {
         switch action {
         case let .highlight(color):
+            // Any color-dot press becomes the new default marker (shared with
+            // the PDF reader via `lastHighlightColor`).
+            lastHighlightColorRaw = color.rawValue
             switch target {
             case let .selection(range):
                 model.addHighlight(in: book, chapter: chapter, range: range, color: color)
@@ -504,14 +611,19 @@ struct ReaderView: View {
             switch target {
             case let .selection(range):
                 // The note editor works on a persisted highlight, so create
-                // one first (default yellow) — one gesture, per the spec.
-                if let created = model.addHighlight(in: book, chapter: chapter, range: range) {
+                // one first (in the last-used color) — one gesture, per the
+                // spec. Remember its id: cancel must remove exactly this one.
+                if let created = model.addHighlight(
+                    in: book, chapter: chapter, range: range, color: lastHighlightColor
+                ) {
                     noteDraft = ""
+                    noteFlowCreatedHighlightID = created.id
                     editingNote = created
                 }
             case let .span(span):
                 if let existing = highlight(withID: span.id) {
                     noteDraft = existing.note ?? ""
+                    noteFlowCreatedHighlightID = nil
                     editingNote = existing
                 }
             }
@@ -528,12 +640,16 @@ struct ReaderView: View {
             showAsk = true
 
         case .copy:
+            let copied: String
             switch target {
             case let .selection(range):
-                copyToPasteboard(substring(of: chapter, range: range))
+                copied = substring(of: chapter, range: range)
             case let .span(span):
-                copyToPasteboard(highlight(withID: span.id)?.quotedText ?? "")
+                copied = highlight(withID: span.id)?.quotedText ?? ""
             }
+            // Shared clipboard helper (AnnotationListView). Skip empty text so
+            // a failed lookup doesn't clear the clipboard.
+            if !copied.isEmpty { Pasteboard.copy(copied) }
 
         case .remove:
             if case let .span(span) = target, let existing = highlight(withID: span.id) {
@@ -542,20 +658,17 @@ struct ReaderView: View {
         }
     }
 
+    /// Slices with `String.Index` — materializing `Array(chapter.text)` would
+    /// copy the whole chapter per copy action.
     private func substring(of chapter: Chapter, range: Range<Int>) -> String {
-        let characters = Array(chapter.text)
-        let lower = min(max(0, range.lowerBound), characters.count)
-        let upper = min(max(lower, range.upperBound), characters.count)
-        return String(characters[lower..<upper])
-    }
-
-    private func copyToPasteboard(_ text: String) {
-        guard !text.isEmpty else { return }
-        #if canImport(UIKit)
-        UIPasteboard.general.string = text
-        #elseif canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #endif
+        let text = chapter.text
+        let lowerOffset = max(0, range.lowerBound)
+        guard range.upperBound > lowerOffset,
+              let lower = text.index(
+                  text.startIndex, offsetBy: lowerOffset, limitedBy: text.endIndex
+              )
+        else { return "" }
+        // prefix clamps to the text's end, matching the old upper-bound clamp.
+        return String(text[lower...].prefix(range.upperBound - lowerOffset))
     }
 }

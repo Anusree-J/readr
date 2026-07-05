@@ -84,6 +84,12 @@ struct SelectableTextView: View {
     /// Inline images keyed by the character offset of their U+FFFC placeholder
     /// in `text`.
     var inlineImages: [Int: PlatformImage] = [:]
+    /// Programmatic jump: a character offset to scroll into view. The view
+    /// performs the scroll on its next update, then clears the binding
+    /// (asynchronously — never during the update pass) so the same offset can
+    /// be targeted again later. Defaulted so paged-mode embedders, which
+    /// never jump within a page, are unaffected.
+    var scrollToOffset: Binding<Int?>? = nil
     /// An annotation-menu action, with the target in `text` coordinates.
     var onAnnotate: (AnnotationTarget, AnnotationAction) -> Void = { _, _ in }
 
@@ -97,6 +103,10 @@ struct SelectableTextView: View {
             highlights: highlights,
             style: style,
             inlineImages: inlineImages,
+            // Read the wrapped value here so SwiftUI re-runs update* when
+            // the host sets a new target.
+            scrollTarget: scrollToOffset?.wrappedValue,
+            clearScrollTarget: { scrollToOffset?.wrappedValue = nil },
             onTarget: { barTarget = $0 }
         )
         .overlay(alignment: .bottom) {
@@ -118,6 +128,10 @@ struct SelectableTextView: View {
             highlights: highlights,
             style: style,
             inlineImages: inlineImages,
+            // Read the wrapped value here so SwiftUI re-runs update* when
+            // the host sets a new target.
+            scrollTarget: scrollToOffset?.wrappedValue,
+            clearScrollTarget: { scrollToOffset?.wrappedValue = nil },
             onAnnotate: onAnnotate
         )
     }
@@ -226,6 +240,10 @@ private struct Representable: UIViewRepresentable {
     let highlights: [HighlightSpan]
     let style: ReaderStyle
     let inlineImages: [Int: PlatformImage]
+    /// Pending programmatic scroll (character offset into `text`); nil ⇒ none.
+    let scrollTarget: Int?
+    /// Clears the host's scroll target once the scroll has been issued.
+    let clearScrollTarget: () -> Void
     /// Reports the annotation target to show the bar for (nil ⇒ hide).
     let onTarget: (AnnotationTarget?) -> Void
 
@@ -256,14 +274,33 @@ private struct Representable: UIViewRepresentable {
         coordinator.spans = highlights
         // Only rebuild the attributed string when the content actually changed —
         // reassigning it resets the user's selection and re-fires the delegate.
-        guard coordinator.needsRender(
+        if coordinator.needsRender(
             text: text, spans: highlights, style: style,
             imageOffsets: inlineImages.keys.sorted()
-        ) else { return }
-        coordinator.hideBar()
-        view.attributedText = TextRangeConvert.attributedString(
-            text, highlights: highlights, style: style, inlineImages: inlineImages
-        )
+        ) {
+            // Hiding the bar writes SwiftUI state via onTarget, which is
+            // undefined behavior synchronously inside a view update — defer.
+            coordinator.hideBarAsync()
+            view.attributedText = TextRangeConvert.attributedString(
+                text, highlights: highlights, style: style, inlineImages: inlineImages
+            )
+        }
+        performPendingScroll(on: view)
+    }
+
+    /// Programmatic jump (search hit / bookmark / notes panel): scroll the
+    /// target offset into view, then clear the host's binding on the next
+    /// runloop turn — writing SwiftUI state synchronously from update* is
+    /// undefined behavior (and re-issuing an idempotent scroll before the
+    /// clear lands is harmless).
+    private func performPendingScroll(on view: UITextView) {
+        guard let offset = scrollTarget else { return }
+        let lower = min(max(0, offset), text.count)
+        let upper = min(lower + 1, text.count)
+        if let ns = TextRangeConvert.nsRange(from: lower..<upper, in: text) {
+            view.scrollRangeToVisible(ns)
+        }
+        DispatchQueue.main.async { clearScrollTarget() }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(text: text, onTarget: onTarget) }
@@ -305,6 +342,15 @@ private struct Representable: UIViewRepresentable {
             guard barVisible else { return }
             barVisible = false
             onTarget(nil)
+        }
+
+        /// Content is being replaced during a SwiftUI update pass: the bar
+        /// (if shown) must go, but the actual hide runs async because
+        /// `onTarget` writes SwiftUI state. `barVisible` gates repeat calls.
+        func hideBarAsync() {
+            debounce?.invalidate()
+            guard barVisible else { return }
+            DispatchQueue.main.async { [weak self] in self?.hideBar() }
         }
 
         private func show(_ target: AnnotationTarget) {
@@ -382,6 +428,10 @@ private struct Representable: NSViewRepresentable {
     let highlights: [HighlightSpan]
     let style: ReaderStyle
     let inlineImages: [Int: PlatformImage]
+    /// Pending programmatic scroll (character offset into `text`); nil ⇒ none.
+    let scrollTarget: Int?
+    /// Clears the host's scroll target once the scroll has been issued.
+    let clearScrollTarget: () -> Void
     let onAnnotate: (AnnotationTarget, AnnotationAction) -> Void
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -426,18 +476,35 @@ private struct Representable: NSViewRepresentable {
         coordinator.onAnnotate = onAnnotate
         coordinator.text = text
         coordinator.spans = highlights
-        guard coordinator.needsRender(
+        if coordinator.needsRender(
             text: text, spans: highlights, style: style,
             imageOffsets: inlineImages.keys.sorted()
-        ) else { return }
-        // Content changed under the popover (chapter turn, highlight edits) —
-        // its anchor rect is stale.
-        coordinator.dismissMenu()
-        textView.textStorage?.setAttributedString(
-            TextRangeConvert.attributedString(
-                text, highlights: highlights, style: style, inlineImages: inlineImages
+        ) {
+            // Content changed under the popover (chapter turn, highlight
+            // edits) — its anchor rect is stale.
+            coordinator.dismissMenu()
+            textView.textStorage?.setAttributedString(
+                TextRangeConvert.attributedString(
+                    text, highlights: highlights, style: style, inlineImages: inlineImages
+                )
             )
-        )
+        }
+        performPendingScroll(on: textView)
+    }
+
+    /// Programmatic jump (search hit / bookmark / notes panel): scroll the
+    /// target offset into view, then clear the host's binding on the next
+    /// runloop turn — writing SwiftUI state synchronously from update* is
+    /// undefined behavior (and re-issuing an idempotent scroll before the
+    /// clear lands is harmless).
+    private func performPendingScroll(on textView: NSTextView) {
+        guard let offset = scrollTarget else { return }
+        let lower = min(max(0, offset), text.count)
+        let upper = min(lower + 1, text.count)
+        if let ns = TextRangeConvert.nsRange(from: lower..<upper, in: text) {
+            textView.scrollRangeToVisible(ns)
+        }
+        DispatchQueue.main.async { clearScrollTarget() }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(text: text, onAnnotate: onAnnotate) }
