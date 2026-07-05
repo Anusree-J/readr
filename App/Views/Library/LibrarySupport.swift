@@ -52,19 +52,27 @@ enum LibraryProgress {
     }
 }
 
-/// The Import (+) and AI-provider (gear) toolbar buttons, shared by Home and
-/// every grid so import stays one click (or ⌘I) away anywhere in the library.
-struct LibraryToolbarItems: ToolbarContent {
+/// The Import… and AI-provider (gear) header buttons, shared by Home and every
+/// grid so import stays one click (or ⌘I) away anywhere in the library. Lives
+/// in each screen's content header row (per the Marginalia design) rather than
+/// the system toolbar; the accessibility identifiers/labels are unchanged.
+struct LibraryHeaderButtons: View {
     @Binding var isImporting: Bool
     @Binding var showSettings: Bool
+    let theme: ReadingTheme
 
-    var body: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
+    var body: some View {
+        HStack(spacing: 10) {
             Button {
                 showSettings = true
             } label: {
-                Label("AI Providers", systemImage: "gearshape")
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(theme.muted)
+                    .padding(6)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .help("AI provider settings")
             // The UI tests tap `buttons["AI providers"]` — keep this label.
             .accessibilityLabel("AI providers")
@@ -73,13 +81,67 @@ struct LibraryToolbarItems: ToolbarContent {
             Button {
                 isImporting = true
             } label: {
-                Label("Import", systemImage: "plus")
+                Text("Import\u{2026}")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.inkColor)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(theme.elevated)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(theme.line, lineWidth: 1)
+                    )
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .keyboardShortcut("i", modifiers: .command)
             .help("Import a book (⌘I)")
             .accessibilityLabel("Import book")
             .accessibilityIdentifier("library.import")
         }
+    }
+}
+
+/// The Marginalia progress mark under every cover: a 2px hairline track with
+/// an ink fill at the reading fraction, and an 11px muted caption ("34%",
+/// "Not started", or "Finished").
+struct LibraryProgressHairline: View {
+    /// Fraction read, nil when the book was never opened (see
+    /// `LibraryProgress.fraction`).
+    let fraction: Double?
+    let isFinished: Bool
+    let theme: ReadingTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    theme.line
+                    theme.inkColor
+                        .frame(width: geo.size.width * filledFraction)
+                }
+            }
+            .frame(height: 2)
+            .clipShape(Capsule())
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(theme.muted)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var filledFraction: CGFloat {
+        if isFinished { return 1 }
+        return CGFloat(min(max(fraction ?? 0, 0), 1))
+    }
+
+    private var label: String {
+        if isFinished { return "Finished" }
+        guard let fraction, fraction > 0 else { return "Not started" }
+        return "\(Int((min(fraction, 1) * 100).rounded()))%"
     }
 }
 

@@ -1,11 +1,12 @@
 import SwiftUI
 import ReadrKit
 
-/// The annotation popover content, Apple-Books style: five color dots that
-/// highlight in ONE click, plus Note / Ask / Copy (and Remove when editing an
-/// existing highlight). Shared by the text reader (NSPopover/iOS bar) and the
-/// native PDF reader — keep it presentation-agnostic: no dismissal logic here,
-/// hosts dismiss in the callbacks.
+/// The annotation popover content, Marginalia style: four muted color dots
+/// that highlight in ONE click, then `Note` and `✦ Ask` as quiet text
+/// buttons (the ✦ iris mark is reserved for AI). Shared by the text reader
+/// (NSPopover/iOS bar) and the native PDF reader — keep it
+/// presentation-agnostic: no dismissal logic here, hosts dismiss in the
+/// callbacks.
 struct AnnotationMenuView: View {
     enum Mode: Equatable {
         /// A fresh selection: color click creates the highlight.
@@ -15,6 +16,8 @@ struct AnnotationMenuView: View {
     }
 
     let mode: Mode
+    /// Reading theme of the hosting surface, so the menu matches the page.
+    var theme: ReadingTheme = .paper
     /// Create (or recolor) the highlight with this color.
     var onHighlight: (HighlightColor) -> Void
     /// Open the note editor (creates the highlight first when in create mode).
@@ -26,40 +29,58 @@ struct AnnotationMenuView: View {
     var onRemove: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: 10) {
-            ForEach(HighlightColor.allCases, id: \.self) { color in
+        HStack(spacing: 8) {
+            ForEach(ReadingTheme.pickerColors, id: \.self) { color in
                 colorDot(color)
             }
-
-            Divider().frame(height: 18)
-
-            actionButton(
-                mode.hasNote ? "Edit Note" : "Note",
-                systemImage: "note.text",
-                identifier: "annotation.note",
-                action: onNote
-            )
-            actionButton(
-                "Ask", systemImage: "sparkles",
-                identifier: "annotation.ask", action: onAsk
-            )
-            actionButton(
-                "Copy", systemImage: "doc.on.doc",
-                identifier: "annotation.copy", action: onCopy
-            )
             if case .edit = mode, let onRemove {
-                Divider().frame(height: 18)
-                Button(role: .destructive, action: onRemove) {
-                    Image(systemName: "trash")
+                Button(action: onRemove) {
+                    Text("✕").font(.system(size: 12))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.faint)
                 .help("Remove highlight")
                 .accessibilityLabel("Remove highlight")
                 .accessibilityIdentifier("annotation.remove")
             }
+
+            Rectangle()
+                .fill(theme.line)
+                .frame(width: 1, height: 16)
+
+            Button(action: onNote) {
+                Text(mode.hasNote ? "Edit Note" : "Note")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.inkColor)
+            .help(mode.hasNote ? "Edit note" : "Add a note")
+            .accessibilityLabel(mode.hasNote ? "Edit Note" : "Note")
+            .accessibilityIdentifier("annotation.note")
+
+            Button(action: onAsk) {
+                Text("\(AppTheme.aiGlyph) Ask")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.iris)
+            .help("Ask the book about this passage")
+            .accessibilityLabel("Ask")
+            .accessibilityIdentifier("annotation.ask")
+
+            Button(action: onCopy) {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.muted)
+            .help("Copy")
+            .accessibilityLabel("Copy")
+            .accessibilityIdentifier("annotation.copy")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .background(theme.elevated)
     }
 
     private func colorDot(_ color: HighlightColor) -> some View {
@@ -69,32 +90,20 @@ struct AnnotationMenuView: View {
             ZStack {
                 Circle()
                     .fill(ReadingTheme.markerSwatch(color))
-                    .frame(width: 20, height: 20)
+                    .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 1))
+                    .frame(width: 19, height: 19)
                 if case let .edit(current, _) = mode, current == color {
                     Circle()
-                        .strokeBorder(Color.primary.opacity(0.65), lineWidth: 2)
-                        .frame(width: 26, height: 26)
+                        .strokeBorder(theme.inkColor.opacity(0.65), lineWidth: 1.5)
+                        .frame(width: 25, height: 25)
                 }
             }
-            .frame(width: 26, height: 26)
+            .frame(width: 25, height: 25)
         }
         .buttonStyle(.plain)
         .help("Highlight \(color.displayName)")
         .accessibilityLabel("Highlight \(color.displayName)")
         .accessibilityIdentifier("annotation.color.\(color.rawValue)")
-    }
-
-    private func actionButton(
-        _ title: String, systemImage: String, identifier: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-        }
-        .buttonStyle(.borderless)
-        .help(title)
-        .accessibilityLabel(title)
-        .accessibilityIdentifier(identifier)
     }
 }
 

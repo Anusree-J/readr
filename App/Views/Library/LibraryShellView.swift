@@ -11,11 +11,18 @@ enum LibrarySidebarItem: Hashable {
 /// Home, filtered grids, and Highlights & Notes. Import, provider settings,
 /// the import-failure alert, the drop target, and the open-book action all
 /// live here so every subscreen shares one implementation of each.
+///
+/// Styled in the Marginalia design language: the whole shell reads the shared
+/// reading theme ("readingTheme", the reader's key) so chrome always matches
+/// the page — warm surfaces, hairlines, quiet sans chrome, serif wordmark.
 struct LibraryShellView: View {
     @EnvironmentObject private var model: AppModel
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
     #endif
+
+    @AppStorage("readingTheme") private var themeRaw = ReadingTheme.paper.rawValue
+    private var theme: ReadingTheme { ReadingTheme(rawValue: themeRaw) ?? .paper }
 
     /// Start on Home so a collapsed (iPhone) split view lands on content, not
     /// the bare sidebar list.
@@ -35,6 +42,7 @@ struct LibraryShellView: View {
         } detail: {
             detail
         }
+        .background(theme.background)
         .tint(AppTheme.accent)
         .fileImporter(
             isPresented: $isImporting,
@@ -69,13 +77,95 @@ struct LibraryShellView: View {
         #if os(macOS)
         sidebarList
             .searchable(text: $query, placement: .sidebar, prompt: "Title or author")
-            .navigationSplitViewColumnWidth(min: 200, ideal: 230)
+            .navigationSplitViewColumnWidth(206)
         #else
         sidebarList
             .searchable(text: $query, prompt: "Title or author")
         #endif
     }
 
+    #if os(macOS)
+    /// Marginalia sidebar: quiet text rows with right-aligned faint counts,
+    /// serif wordmark up top, provider/privacy footer pinned to the bottom.
+    /// A plain VStack of buttons drives the same `selection` state the old
+    /// List did — the detail pane is always visible on macOS, so no List
+    /// navigation semantics are lost.
+    private var sidebarList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Readr")
+                    .font(.system(size: 15, weight: .semibold, design: .serif))
+                    .foregroundStyle(theme.inkColor)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 2)
+                    .padding(.bottom, 12)
+                navRow("Home", item: .home, id: "sidebar.home")
+                sectionLabel("Library")
+                navRow("All Books", item: .allBooks, count: model.books.count, id: "sidebar.allBooks")
+                navRow("Books", item: .books, count: epubCount, id: "sidebar.books")
+                navRow("PDFs", item: .pdfs, count: pdfCount, id: "sidebar.pdfs")
+                navRow("Finished", item: .finished, count: finishedCount, id: "sidebar.finished")
+                sectionLabel("Notes")
+                navRow("Highlights & Notes", item: .notes, count: annotationCount, id: "sidebar.notes")
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 14)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { sidebarFooter }
+        .background(theme.background)
+        .navigationTitle("Readr")
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .tracking(1.2)
+            .foregroundStyle(theme.faint)
+            .padding(.horizontal, 10)
+            .padding(.top, 16)
+            .padding(.bottom, 4)
+            .accessibilityHidden(true)
+    }
+
+    private func navRow(
+        _ title: String,
+        item: LibrarySidebarItem,
+        count: Int? = nil,
+        id: String
+    ) -> some View {
+        let isSelected = selection == item
+        return Button {
+            selection = item
+        } label: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? theme.inkColor : theme.muted)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.faint)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isSelected ? theme.paper : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier(id)
+    }
+    #else
+    /// iOS keeps the native List(selection:) so collapsed-width navigation
+    /// (tap row → push detail) stays exactly as the system implements it;
+    /// counts arrive as badges and surfaces take the reading theme.
     private var sidebarList: some View {
         List(selection: $selection) {
             Label("Home", systemImage: "house")
@@ -83,25 +173,88 @@ struct LibraryShellView: View {
                 .accessibilityIdentifier("sidebar.home")
             Section("Library") {
                 Label("All Books", systemImage: "books.vertical")
+                    .badge(model.books.count)
                     .tag(LibrarySidebarItem.allBooks)
                     .accessibilityIdentifier("sidebar.allBooks")
                 Label("Books", systemImage: "book")
+                    .badge(epubCount)
                     .tag(LibrarySidebarItem.books)
                     .accessibilityIdentifier("sidebar.books")
                 Label("PDFs", systemImage: "doc.text")
+                    .badge(pdfCount)
                     .tag(LibrarySidebarItem.pdfs)
                     .accessibilityIdentifier("sidebar.pdfs")
                 Label("Finished", systemImage: "checkmark.circle")
+                    .badge(finishedCount)
                     .tag(LibrarySidebarItem.finished)
                     .accessibilityIdentifier("sidebar.finished")
             }
             Section("Notes") {
                 Label("Highlights & Notes", systemImage: "highlighter")
+                    .badge(annotationCount)
                     .tag(LibrarySidebarItem.notes)
                     .accessibilityIdentifier("sidebar.notes")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(theme.background)
+        .safeAreaInset(edge: .bottom, spacing: 0) { sidebarFooter }
         .navigationTitle("Readr")
+    }
+    #endif
+
+    /// The pinned sidebar footer: active model on the first line, the privacy
+    /// promise faint below, over a top hairline (the design's provider pill).
+    private var sidebarFooter: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(providerLine)
+                .foregroundStyle(theme.muted)
+            Text("No telemetry · keys in Keychain")
+                .foregroundStyle(theme.faint)
+        }
+        .font(.system(size: 11))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .overlay(alignment: .top) {
+            theme.line.frame(height: 1)
+        }
+        .background(theme.background)
+    }
+
+    /// "Local model" / the provider's name when one is connected and usable,
+    /// otherwise the quiet nudge.
+    private var providerLine: String {
+        guard model.activeProvider() != nil,
+              let kind = model.providerManager.selection?.kind else {
+            return "No model connected"
+        }
+        switch kind {
+        case .local: return "Local model"
+        case .anthropic: return "Claude"
+        case .openAI: return "ChatGPT"
+        }
+    }
+
+    // MARK: Sidebar counts
+
+    private var pdfCount: Int {
+        model.books.filter { model.isPDF($0) }.count
+    }
+
+    private var epubCount: Int {
+        model.books.count - pdfCount
+    }
+
+    private var finishedCount: Int {
+        model.books.filter { model.bookState(for: $0)?.isFinished == true }.count
+    }
+
+    private var annotationCount: Int {
+        model.books.reduce(0) {
+            $0 + model.highlights(for: $1).count + model.pdfHighlights(for: $1).count
+        }
     }
 
     // MARK: Detail
@@ -153,6 +306,7 @@ struct LibraryShellView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(theme.background)
         // The whole detail area accepts book files dragged in from
         // Finder/Files — on every screen, not just the empty state.
         .dropDestination(for: DroppedBookFile.self) { files, _ in

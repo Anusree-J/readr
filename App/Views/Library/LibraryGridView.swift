@@ -2,9 +2,13 @@ import SwiftUI
 import ReadrKit
 
 /// The bookshelf: an adaptive grid of covers with hover states (macOS),
-/// progress bars, PDF/Finished badges, a sort menu, and the per-book context
-/// menu. The book list arrives already search-filtered from the shell; this
-/// view only sorts and renders it.
+/// hairline progress marks, PDF/Finished badges, a sort menu, and the per-book
+/// context menu. The book list arrives already search-filtered from the shell;
+/// this view only sorts and renders it.
+///
+/// Marginalia styling: a serif shelf-name header with the Import…/settings
+/// buttons in the content (not the system toolbar), flat covers over the
+/// theme background, and a 2px hairline progress track under every jacket.
 struct LibraryGridView: View {
     @EnvironmentObject private var model: AppModel
     let title: String
@@ -22,6 +26,9 @@ struct LibraryGridView: View {
     @Environment(\.openWindow) private var openWindow
     #endif
 
+    @AppStorage("readingTheme") private var themeRaw = ReadingTheme.paper.rawValue
+    private var theme: ReadingTheme { ReadingTheme(rawValue: themeRaw) ?? .paper }
+
     @AppStorage("librarySortOrder") private var sortRaw = LibrarySort.recent.rawValue
     @State private var hoveredBookID: Book.ID?
     /// Book whose Article Studio sheet is open (`sheet(item:)` drives it).
@@ -29,23 +36,13 @@ struct LibraryGridView: View {
     /// Book awaiting delete confirmation.
     @State private var bookPendingDelete: Book?
 
+    /// Design grid: minmax(158px, 1fr) with 26px column gaps.
     private static let columns = [
-        GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 24)
+        GridItem(.adaptive(minimum: 158, maximum: 220), spacing: 26)
     ]
 
     var body: some View {
-        Group {
-            if books.isEmpty {
-                emptyView
-            } else {
-                grid
-            }
-        }
-        .navigationTitle(title)
-        .toolbar {
-            sortToolbar
-            LibraryToolbarItems(isImporting: $isImporting, showSettings: $showSettings)
-        }
+        main
         .sheet(item: $articleBook) { book in
             ArticleStudioView(book: book)
                 .environmentObject(model)
@@ -68,36 +65,88 @@ struct LibraryGridView: View {
         }
     }
 
-    // MARK: Toolbar
+    @ViewBuilder
+    private var main: some View {
+        #if os(iOS)
+        // Inline: the serif in-content header is the screen title; a large
+        // nav-bar title would duplicate it.
+        content.navigationBarTitleDisplayMode(.inline)
+        #else
+        content
+        #endif
+    }
 
-    private var sortToolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Menu {
-                Picker("Sort By", selection: $sortRaw) {
-                    ForEach(LibrarySort.allCases) { sort in
-                        Text(sort.label).tag(sort.rawValue)
-                    }
-                }
-            } label: {
-                Label("Sort", systemImage: "arrow.up.arrow.down")
+    private var content: some View {
+        VStack(spacing: 0) {
+            header
+            if books.isEmpty {
+                emptyView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                grid
             }
-            .help("Sort the library")
-            .accessibilityLabel("Sort")
-            .accessibilityIdentifier("library.sort")
         }
+        .background(theme.background)
+        .navigationTitle(title)
+    }
+
+    // MARK: Header
+
+    /// Serif shelf name on the left; sort, settings, and the bordered Import…
+    /// button on the right (the design's header row).
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            Text(title)
+                .font(.system(size: 24, weight: .semibold, design: .serif))
+                .foregroundStyle(theme.inkColor)
+                .lineLimit(1)
+            Spacer(minLength: 12)
+            sortMenu
+            LibraryHeaderButtons(
+                isImporting: $isImporting,
+                showSettings: $showSettings,
+                theme: theme
+            )
+        }
+        .padding(.horizontal, 36)
+        .padding(.top, 26)
+        .padding(.bottom, 20)
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort By", selection: $sortRaw) {
+                ForEach(LibrarySort.allCases) { sort in
+                    Text(sort.label).tag(sort.rawValue)
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(theme.muted)
+                .padding(6)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("Sort the library")
+        .accessibilityLabel("Sort")
+        .accessibilityIdentifier("library.sort")
     }
 
     // MARK: Grid
 
     private var grid: some View {
         ScrollView {
-            LazyVGrid(columns: Self.columns, spacing: 28) {
+            LazyVGrid(columns: Self.columns, spacing: 30) {
                 ForEach(sortedBooks) { book in
                     cell(for: book)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
+            .padding(.horizontal, 36)
+            .padding(.top, 6)
+            .padding(.bottom, 36)
         }
     }
 
@@ -146,25 +195,28 @@ struct LibraryGridView: View {
         let base = Button {
             openBook(book)
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 cover(for: book)
-                Text(book.metadata.title)
-                    .font(.headline)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-                if !book.metadata.authors.isEmpty {
-                    Text(book.metadata.authors.joined(separator: ", "))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(book.metadata.title)
+                        .font(.system(size: 13, weight: .semibold, design: .serif))
+                        .foregroundStyle(theme.inkColor)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                    if !book.metadata.authors.isEmpty {
+                        Text(book.metadata.authors.joined(separator: ", "))
+                            .font(.system(size: 11))
+                            .foregroundStyle(theme.muted)
+                            .lineLimit(1)
+                    }
                 }
-                if let progress = LibraryProgress.fraction(
-                    for: book, position: model.position(for: book)
-                ) {
-                    ProgressView(value: progress)
-                        .progressViewStyle(.linear)
-                        .tint(AppTheme.accent)
-                }
+                LibraryProgressHairline(
+                    fraction: LibraryProgress.fraction(
+                        for: book, position: model.position(for: book)
+                    ),
+                    isFinished: model.bookState(for: book)?.isFinished == true,
+                    theme: theme
+                )
             }
         }
         .buttonStyle(.plain)
@@ -187,8 +239,8 @@ struct LibraryGridView: View {
     }
 
     /// The jacket plus its overlays: PDF/Finished badges and the macOS hover
-    /// treatment (scale 1.04, deeper shadow, "Read" pill — per the design
-    /// spec's hover affordance).
+    /// treatment — a quiet 3pt lift with a slightly deeper shadow (the
+    /// design's translateY(-3), .18s ease).
     private func cover(for book: Book) -> some View {
         let isHovered = hoveredBookID == book.id
         return BookCoverView(book: book, coverImage: model.coverImage(for: book))
@@ -214,22 +266,9 @@ struct LibraryGridView: View {
                         .accessibilityLabel("Finished")
                 }
             }
-            .overlay(alignment: .bottom) {
-                if isHovered {
-                    Text("Read")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(AppTheme.accent))
-                        .padding(.bottom, 10)
-                        .transition(.opacity)
-                        .allowsHitTesting(false)
-                }
-            }
-            .scaleEffect(isHovered ? 1.04 : 1.0)
-            .shadow(color: .black.opacity(isHovered ? 0.30 : 0.0), radius: 12, x: 0, y: 8)
-            .animation(.easeOut(duration: 0.15), value: isHovered)
+            .offset(y: isHovered ? -3 : 0)
+            .shadow(color: .black.opacity(isHovered ? 0.20 : 0.0), radius: 14, x: 0, y: 10)
+            .animation(.easeOut(duration: 0.18), value: isHovered)
     }
 
     // MARK: Context menu
