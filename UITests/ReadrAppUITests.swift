@@ -86,9 +86,12 @@ final class ReadrAppUITests: XCTestCase {
         // unambiguous).
         XCTAssertTrue(
             app.staticTexts["the clocks were striking thirteen"].firstMatch
-                .waitForExistence(timeout: 5)
-            || app.buttons["notes.createArticle"].firstMatch.waitForExistence(timeout: 2),
-            "Notes panel should list seeded highlights"
+                .waitForExistence(timeout: 5),
+            "Notes panel should list the seeded highlight's quoted text"
+        )
+        XCTAssertTrue(
+            app.buttons["notes.createArticle"].firstMatch.waitForExistence(timeout: 2),
+            "Notes panel should offer the Create Article entry point"
         )
     }
 
@@ -109,10 +112,11 @@ final class ReadrAppUITests: XCTestCase {
         XCTAssertTrue(createArticle.waitForExistence(timeout: 5))
         createArticle.tap()
 
+        // The seeded run has no provider configured, so the guidance screen
+        // is deterministic — assert it specifically.
         XCTAssertTrue(
-            app.staticTexts["No AI provider connected"].waitForExistence(timeout: 5)
-            || app.buttons["Compose"].firstMatch.waitForExistence(timeout: 2),
-            "Article studio should open from the Notes panel"
+            app.staticTexts["No AI provider connected"].waitForExistence(timeout: 5),
+            "Article studio should show the connect-a-provider guidance"
         )
     }
 

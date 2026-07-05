@@ -41,9 +41,15 @@ final class AppModel: ObservableObject {
         )
 
         // All stored properties are initialized above — only now may init
-        // touch self freely (Swift definite-initialization rule).
+        // touch self freely (Swift definite-initialization rule). Cache only
+        // the states that exist: getters fall through to the store for the
+        // rest, and must never write the cache themselves (see bookState).
+        // `self.store` explicitly: the bare name is the optional `store`
+        // parameter, which shadows the stored property inside init.
         for book in books {
-            statesByBook[book.id] = store.bookState(for: book.id)
+            if let state = self.store.bookState(for: book.id) {
+                statesByBook[book.id] = state
+            }
         }
     }
 
@@ -368,11 +374,13 @@ final class AppModel: ObservableObject {
 
     // MARK: Book state (Home / Finished)
 
+    /// SwiftUI body calls this, so it must not mutate `@Published` state —
+    /// writing the cache here would publish during a view update (and, for a
+    /// book with no saved state, re-publish on every render). The cache is
+    /// populated by init and by every mutation path instead; the store
+    /// fallback is a cheap in-memory dictionary read.
     func bookState(for book: Book) -> BookState? {
-        if let cached = statesByBook[book.id] { return cached }
-        let loaded = store.bookState(for: book.id)
-        statesByBook[book.id] = loaded
-        return loaded
+        statesByBook[book.id] ?? store.bookState(for: book.id)
     }
 
     /// Record that the reader opened this book (drives "Continue Reading").
@@ -417,11 +425,10 @@ final class AppModel: ObservableObject {
 
     // MARK: Bookmarks
 
+    /// Called from body — no `@Published` writes here (see bookState). The
+    /// add/remove paths below keep the cache fresh.
     func bookmarks(for book: Book) -> [Bookmark] {
-        if let cached = bookmarksByBook[book.id] { return cached }
-        let loaded = store.bookmarks(for: book.id)
-        bookmarksByBook[book.id] = loaded
-        return loaded
+        bookmarksByBook[book.id] ?? store.bookmarks(for: book.id)
     }
 
     func addBookmark(_ bookmark: Bookmark) {
@@ -436,11 +443,10 @@ final class AppModel: ObservableObject {
 
     // MARK: PDF highlights
 
+    /// Called from body — no `@Published` writes here (see bookState). The
+    /// add/update/remove paths below keep the cache fresh.
     func pdfHighlights(for book: Book) -> [PDFHighlight] {
-        if let cached = pdfHighlightsByBook[book.id] { return cached }
-        let loaded = store.pdfHighlights(for: book.id)
-        pdfHighlightsByBook[book.id] = loaded
-        return loaded
+        pdfHighlightsByBook[book.id] ?? store.pdfHighlights(for: book.id)
     }
 
     func addPDFHighlight(_ highlight: PDFHighlight) {
@@ -471,11 +477,10 @@ final class AppModel: ObservableObject {
 
     // MARK: Highlights
 
+    /// Called from body — no `@Published` writes here (see bookState). The
+    /// add/update/remove paths below keep the cache fresh.
     func highlights(for book: Book) -> [Highlight] {
-        if let cached = highlightsByBook[book.id] { return cached }
-        let loaded = store.highlights(for: book.id)
-        highlightsByBook[book.id] = loaded
-        return loaded
+        highlightsByBook[book.id] ?? store.highlights(for: book.id)
     }
 
     @discardableResult

@@ -10,6 +10,11 @@ struct HomeView: View {
     @Binding var isImporting: Bool
     @Binding var showSettings: Bool
 
+    /// Memoized "~N min left" per book. The estimate scans the whole chapter,
+    /// so body must never compute it per card per render — it only reads this
+    /// dict, refreshed on appear and when the Continue Reading row changes.
+    @State private var minutesCache: [UUID: Int] = [:]
+
     var body: some View {
         Group {
             if model.books.isEmpty {
@@ -40,7 +45,7 @@ struct HomeView: View {
                                     progress: LibraryProgress.fraction(
                                         for: book, position: model.position(for: book)
                                     ),
-                                    minutesLeft: minutesLeft(in: book)
+                                    minutesLeft: minutesCache[book.id]
                                 ) {
                                     openBook(book)
                                 }
@@ -72,6 +77,10 @@ struct HomeView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 20)
         }
+        .task { refreshMinutesCache() }
+        .onChange(of: model.continueReading.map(\.id)) {
+            refreshMinutesCache()
+        }
     }
 
     /// Serif section headings — reading-related headings use the book face
@@ -84,9 +93,21 @@ struct HomeView: View {
             .padding(.top, 8)
     }
 
+    /// Recomputes the minutes-left estimates for every Continue Reading book.
+    private func refreshMinutesCache() {
+        var cache: [UUID: Int] = [:]
+        for book in model.continueReading {
+            if let minutes = minutesLeft(in: book) { cache[book.id] = minutes }
+        }
+        minutesCache = cache
+    }
+
     /// "~N min left in chapter" for the resume card, when a position is saved.
+    /// PDF positions get no estimate: their chapterIndex/characterOffset don't
+    /// track the page, so a chapter-text estimate would be meaningless.
     private func minutesLeft(in book: Book) -> Int? {
         guard let position = model.position(for: book),
+              position.pdfPageIndex == nil,
               book.chapters.indices.contains(position.chapterIndex) else { return nil }
         let minutes = ReadingTimeEstimator().minutesLeft(
             inChapterText: book.chapters[position.chapterIndex].text,
