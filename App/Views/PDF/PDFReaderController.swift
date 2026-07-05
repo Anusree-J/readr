@@ -25,6 +25,10 @@ final class PDFReaderController: NSObject, ObservableObject {
     @Published private(set) var pageCount = 0
     /// Highlight whose note is being edited — drives the note sheet.
     @Published var pendingNote: PDFHighlight?
+    /// True when `pendingNote` was just created by the Note action, so
+    /// cancelling the sheet should undo the highlight too. Editing an
+    /// existing highlight's note must never delete it on cancel.
+    private(set) var pendingNoteIsNew = false
     /// Which annotation menu is up. macOS presents it as an `NSPopover`; iOS
     /// renders a floating bar from this state. Published on both platforms
     /// because menu actions route by this context.
@@ -52,6 +56,7 @@ final class PDFReaderController: NSObject, ObservableObject {
     /// mutated — overlays exist only on the in-memory `PDFDocument`.
     private var overlayAnnotations: [UUID: [PDFAnnotation]] = [:]
     private var selectionDebounce: Task<Void, Never>?
+    private var positionSaveDebounce: Task<Void, Never>?
     /// The selection the create menu was anchored to, captured when the menu
     /// appears so its actions aren't at the mercy of later selection changes.
     private var pendingSelection: PDFSelection?
@@ -61,13 +66,14 @@ final class PDFReaderController: NSObject, ObservableObject {
     private var lastSavedPageIndex: Int?
 
     /// Last color picked, used when Note creates a highlight without an
-    /// explicit color choice. Persisted so it survives relaunches.
+    /// explicit color choice. Persisted so it survives relaunches — same key
+    /// the text reader uses, so both modes share one "last color".
     private var lastUsedColor: HighlightColor {
         get {
-            UserDefaults.standard.string(forKey: "pdf.lastHighlightColor")
+            UserDefaults.standard.string(forKey: "lastHighlightColor")
                 .flatMap(HighlightColor.init(rawValue:)) ?? .yellow
         }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "pdf.lastHighlightColor") }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "lastHighlightColor") }
     }
 
     #if canImport(AppKit) && !canImport(UIKit)
@@ -90,6 +96,7 @@ final class PDFReaderController: NSObject, ObservableObject {
     deinit {
         NotificationCenter.default.removeObserver(self)
         selectionDebounce?.cancel()
+        positionSaveDebounce?.cancel()
     }
 
     // MARK: Attachment & document loading
@@ -154,7 +161,7 @@ final class PDFReaderController: NSObject, ObservableObject {
 
     @objc private func pageDidChange(_ note: Notification) {
         refreshPageState()
-        persistPosition()
+        schedulePositionSave()
     }
 
     private func refreshPageState() {
@@ -165,15 +172,35 @@ final class PDFReaderController: NSObject, ObservableObject {
         }
     }
 
+    /// Debounce position writes: the store rewrites its JSON on every save,
+    /// so a fast scroll through many pages should land one write when the
+    /// scrolling settles, not one per page.
+    private func schedulePositionSave() {
+        guard currentPageIndex != lastSavedPageIndex else { return }
+        positionSaveDebounce?.cancel()
+        positionSaveDebounce = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.persistPosition()
+        }
+    }
+
+    /// Write the position immediately — called when the reader disappears so
+    /// a pending debounce can't drop the last page turn.
+    func flushPosition() {
+        positionSaveDebounce?.cancel()
+        persistPosition()
+    }
+
     private func persistPosition() {
-        // The store rewrites its JSON on every save — skipping repeats keeps
-        // continuous scrolling cheap.
+        // Skipping repeats keeps continuous scrolling cheap.
         guard let model, let book, currentPageIndex != lastSavedPageIndex else { return }
         lastSavedPageIndex = currentPageIndex
-        model.savePosition(
-            ReadingPosition(chapterIndex: 0, characterOffset: 0, pdfPageIndex: currentPageIndex),
-            for: book
-        )
+        // PDF and text mode share one ReadingPosition per book: update only
+        // the PDF page so switching back to text mode restores its spot.
+        var position = model.position(for: book) ?? ReadingPosition(chapterIndex: 0)
+        position.pdfPageIndex = currentPageIndex
+        model.savePosition(position, for: book)
     }
 
     // MARK: Highlight overlays
@@ -311,88 +338,78 @@ final class PDFReaderController: NSObject, ObservableObject {
 
     /// The shared annotation menu wired back to this controller. macOS hosts
     /// it in the popover; iOS renders it inside the floating bottom bar.
+    ///
+    /// Every action captures `context` directly: routing through the published
+    /// `activeMenu` drops clicks, because `popoverDidClose` nils it before the
+    /// button action runs. `activeMenu` only drives presentation state now.
     func menuView(for context: MenuContext) -> AnnotationMenuView {
-        let mode: AnnotationMenuView.Mode
-        var onRemove: (() -> Void)?
         switch context {
         case .create:
-            mode = .create
-        case .edit(let highlight):
-            mode = .edit(
-                currentColor: highlight.color,
-                hasNote: !(highlight.note ?? "").isEmpty
+            return AnnotationMenuView(
+                mode: .create,
+                onHighlight: { [weak self] color in
+                    self?.createHighlightsFromPendingSelection(color: color)
+                },
+                onNote: { [weak self] in
+                    guard let self else { return }
+                    // Note implies a highlight (Apple Books behavior): create
+                    // it with the last-used color first, then edit its note.
+                    let created = self.createHighlightsFromPendingSelection(color: self.lastUsedColor)
+                    self.pendingNoteIsNew = true
+                    self.pendingNote = created.first
+                },
+                onAsk: { [weak self] in
+                    guard let self else { return }
+                    guard let selection = self.pendingSelection else {
+                        self.dismissMenu()
+                        return
+                    }
+                    let built = self.askSelection(
+                        quoted: selection.string ?? "",
+                        page: selection.pages.first
+                    )
+                    self.finishSelectionAction()
+                    self.onAsk?(built)
+                },
+                onCopy: { [weak self] in
+                    guard let self else { return }
+                    let text = self.pendingSelection?.string ?? ""
+                    if !text.isEmpty { Pasteboard.copy(text) }
+                    self.finishSelectionAction()
+                },
+                onRemove: nil
             )
-            onRemove = { [weak self] in self?.removeHighlight(highlight) }
-        }
-        return AnnotationMenuView(
-            mode: mode,
-            onHighlight: { [weak self] color in self?.menuSelectColor(color) },
-            onNote: { [weak self] in self?.menuNote() },
-            onAsk: { [weak self] in self?.menuAsk() },
-            onCopy: { [weak self] in self?.menuCopy() },
-            onRemove: onRemove
-        )
-    }
-
-    // MARK: Menu actions (routed by context)
-
-    private func menuSelectColor(_ color: HighlightColor) {
-        switch activeMenu {
-        case .create:
-            createHighlightsFromPendingSelection(color: color)
         case .edit(let highlight):
-            recolorHighlight(highlight, to: color)
-            dismissMenu()
-        case nil:
-            break
-        }
-    }
-
-    private func menuNote() {
-        switch activeMenu {
-        case .create:
-            // Note implies a highlight (Apple Books behavior): create it with
-            // the last-used color first, then edit its note.
-            let created = createHighlightsFromPendingSelection(color: lastUsedColor)
-            pendingNote = created.first
-        case .edit(let highlight):
-            dismissMenu()
-            pendingNote = highlight
-        case nil:
-            break
-        }
-    }
-
-    private func menuAsk() {
-        switch activeMenu {
-        case .create:
-            guard let selection = pendingSelection else { dismissMenu(); return }
-            let built = askSelection(quoted: selection.string ?? "", page: selection.pages.first)
-            finishSelectionAction()
-            onAsk?(built)
-        case .edit(let highlight):
-            dismissMenu()
-            let page = pdfView?.document?.page(at: highlight.pageIndex)
-            onAsk?(askSelection(
-                quoted: highlight.quotedText,
-                page: page,
-                pageIndex: highlight.pageIndex
-            ))
-        case nil:
-            break
-        }
-    }
-
-    private func menuCopy() {
-        switch activeMenu {
-        case .create:
-            copyToPasteboard(pendingSelection?.string ?? "")
-            finishSelectionAction()
-        case .edit(let highlight):
-            copyToPasteboard(highlight.quotedText)
-            dismissMenu()
-        case nil:
-            break
+            return AnnotationMenuView(
+                mode: .edit(
+                    currentColor: highlight.color,
+                    hasNote: !(highlight.note ?? "").isEmpty
+                ),
+                onHighlight: { [weak self] color in
+                    self?.recolorHighlight(highlight, to: color)
+                    self?.dismissMenu()
+                },
+                onNote: { [weak self] in
+                    self?.dismissMenu()
+                    self?.pendingNoteIsNew = false
+                    self?.pendingNote = highlight
+                },
+                onAsk: { [weak self] in
+                    guard let self else { return }
+                    self.dismissMenu()
+                    let page = self.pdfView?.document?.page(at: highlight.pageIndex)
+                    self.onAsk?(self.askSelection(
+                        quoted: highlight.quotedText,
+                        page: page,
+                        pageIndex: highlight.pageIndex
+                    ))
+                },
+                onCopy: { [weak self] in
+                    Pasteboard.copy(highlight.quotedText)
+                    self?.dismissMenu()
+                },
+                onRemove: { [weak self] in self?.removeHighlight(highlight) }
+            )
         }
     }
 
@@ -545,18 +562,6 @@ final class PDFReaderController: NSObject, ObservableObject {
             surroundingText: surrounding,
             chapterTitle: "Page \(index + 1)"
         )
-    }
-
-    // MARK: Pasteboard
-
-    private func copyToPasteboard(_ text: String) {
-        guard !text.isEmpty else { return }
-        #if canImport(UIKit)
-        UIPasteboard.general.string = text
-        #elseif canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #endif
     }
 
     // MARK: Outline (TOC)

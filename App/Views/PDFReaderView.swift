@@ -30,9 +30,16 @@ struct PDFReaderView: View {
         content
             .toolbar { toolbarItems }
             .sheet(item: $controller.pendingNote) { highlight in
-                PDFHighlightNoteEditor(highlight: highlight)
-                    .environmentObject(model)
+                PDFHighlightNoteSheet(
+                    highlight: highlight,
+                    isNew: controller.pendingNoteIsNew,
+                    controller: controller
+                )
+                .environmentObject(model)
             }
+            // Flush the debounced position save so closing the reader
+            // mid-scroll can't drop the last page turn.
+            .onDisappear { controller.flushPosition() }
     }
 
     // MARK: Layout
@@ -213,44 +220,44 @@ struct PDFReaderView: View {
     }
 }
 
-/// Note editor for a PDF highlight. Draft is seeded once from the highlight —
-/// the sheet owns the text until Save, so background store updates can't
-/// stomp mid-edit typing.
-private struct PDFHighlightNoteEditor: View {
+/// Wraps the shared `NoteEditor` for a PDF highlight. Draft is seeded once
+/// from the highlight — the sheet owns the text until Save, so background
+/// store updates can't stomp mid-edit typing. When the Note action just
+/// created the highlight, cancelling the sheet undoes the creation; cancel
+/// on an existing highlight's note leaves the highlight alone.
+private struct PDFHighlightNoteSheet: View {
     @EnvironmentObject private var model: AppModel
-    @Environment(\.dismiss) private var dismiss
     let highlight: PDFHighlight
+    /// True when the highlight exists only because Note was clicked.
+    let isNew: Bool
+    /// Removal goes through the controller so the page overlay comes off too.
+    let controller: PDFReaderController
     @State private var draft: String
+    @State private var saved = false
 
-    init(highlight: PDFHighlight) {
+    init(highlight: PDFHighlight, isNew: Bool, controller: PDFReaderController) {
         self.highlight = highlight
+        self.isNew = isNew
+        self.controller = controller
         _draft = State(initialValue: highlight.note ?? "")
     }
 
     var body: some View {
-        NavigationStack {
-            TextEditor(text: $draft)
-                .font(.body)
-                .padding()
-                .navigationTitle("Note")
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            var updated = highlight
-                            let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                            updated.note = trimmed.isEmpty ? nil : draft
-                            model.updatePDFHighlight(updated)
-                            dismiss()
-                        }
-                    }
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
-                    }
-                }
+        NoteEditor(quotedText: highlight.quotedText, text: $draft) {
+            var updated = highlight
+            let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Saving an empty editor clears the note rather than storing "".
+            updated.note = trimmed.isEmpty ? nil : trimmed
+            model.updatePDFHighlight(updated)
+            saved = true
         }
-        #if os(macOS)
-        .frame(minWidth: 380, minHeight: 240)
-        #endif
+        .onDisappear {
+            // Dismissed without Save: a Note-flow highlight was never asked
+            // for, so take it back out.
+            if isNew && !saved {
+                controller.removeHighlight(highlight)
+            }
+        }
     }
 }
 
