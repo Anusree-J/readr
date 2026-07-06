@@ -292,6 +292,10 @@ struct PagedChapterView: View {
                 },
                 style: style,
                 inlineImages: pageImages,
+                // Pages fit by construction — internal scrolling off, so the
+                // platform text view can't claim the swipe (iOS pan) or
+                // rubber-band under it (macOS elasticity).
+                allowsInternalScrolling: false,
                 onAnnotate: { target, action in
                     onAnnotate(chapterTarget(from: target, origin: origin), action)
                 }
@@ -397,8 +401,11 @@ private struct SwipeToTurn: ViewModifier {
                     let h = value.translation.width
                     let v = value.translation.height
                     // Deliberate horizontal swipes only — a sloppy vertical
-                    // drag must not turn pages.
-                    guard abs(h) > abs(v) * 1.2 else { return }
+                    // drag must not turn pages, and neither should a slow
+                    // horizontal selection-handle drag (flicks carry
+                    // velocity; handle drags end near-stationary).
+                    guard abs(h) > abs(v) * 1.2,
+                          abs(value.velocity.width) > 220 else { return }
                     onTurn(h < 0 ? +1 : -1)
                 }
         )

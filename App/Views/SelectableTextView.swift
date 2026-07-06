@@ -680,6 +680,10 @@ private struct Representable: NSViewRepresentable {
                 let size = view.fittingSize
                 if size.width > 0, size.height > 0 { popover?.contentSize = size }
             }
+            // AppKit popovers follow NSApp.effectiveAppearance, not the
+            // window's pinned (theme-derived) color scheme — adopt the text
+            // view's appearance so the frame can't clash with the paper.
+            popover?.appearance = textView.effectiveAppearance
             popover?.show(relativeTo: rect, of: textView, preferredEdge: .minY)
         }
     }
