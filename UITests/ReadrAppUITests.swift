@@ -200,7 +200,83 @@ final class ReadrAppUITests: XCTestCase {
             if done.waitForExistence(timeout: 2) { done.tap() }
         }
 
-        // f. Back out to the sidebar, visit the All Books grid.
+        // f. Table of contents: open, capture, jump to Chapter Two.
+        let toc = button(app, id: "reader.toc", label: "Table of contents")
+        if toc.waitForExistence(timeout: 3), toc.isHittable {
+            toc.tap()
+            let chapterTwo = app.buttons["Chapter Two"].firstMatch
+            if chapterTwo.waitForExistence(timeout: 3) {
+                snap(app, "08-toc")
+                chapterTwo.tap() // jumps and closes
+                _ = app.staticTexts["Chapter Two"].waitForExistence(timeout: 3)
+            } else {
+                snap(app, "08-toc")
+            }
+        }
+
+        // g. In-book search: query, results list, jump to the first hit.
+        let search = button(app, id: "reader.search", label: "Find in book")
+        if search.waitForExistence(timeout: 3), search.isHittable {
+            search.tap()
+            let field = app.textFields["reader.search.field"].firstMatch
+            if field.waitForExistence(timeout: 3) {
+                field.tap()
+                // CI simulators sometimes keep a hardware keyboard attached;
+                // only type when the software keyboard actually appeared so a
+                // focus hiccup skips the query instead of failing the walk.
+                if app.keyboards.count > 0 {
+                    field.typeText("Winston")
+                    _ = app.buttons.containing(
+                        NSPredicate(format: "label CONTAINS %@", "Winston")
+                    ).firstMatch.waitForExistence(timeout: 4)
+                }
+                snap(app, "09-search")
+                let hit = app.buttons.containing(
+                    NSPredicate(format: "label CONTAINS %@", "Winston")
+                ).firstMatch
+                if hit.exists && hit.isHittable {
+                    hit.tap() // jumps and closes
+                } else {
+                    app.swipeDown() // dismiss the sheet without a hit
+                }
+            }
+        }
+
+        // h. Ask the book (provider guidance without a configured LLM).
+        let ask = button(app, id: "reader.ask", label: "Ask the book")
+        if ask.waitForExistence(timeout: 3), ask.isHittable {
+            ask.tap()
+            _ = app.navigationBars["Ask the book"].waitForExistence(timeout: 3)
+            snap(app, "10-ask")
+            let done = app.buttons["Done"].firstMatch
+            if done.waitForExistence(timeout: 2) { done.tap() }
+        }
+
+        // i. Dark theme + single-page layout (then restore Paper + Scroll so
+        // the persisted appearance doesn't leak into other tests).
+        if appearance.waitForExistence(timeout: 3), appearance.isHittable {
+            appearance.tap()
+            let dark = app.buttons["Dark"].firstMatch
+            if dark.waitForExistence(timeout: 2), dark.isHittable { dark.tap() }
+            let singlePage = app.buttons["Single page"].firstMatch
+            if singlePage.waitForExistence(timeout: 2), singlePage.isHittable {
+                singlePage.tap() // dismisses the popover
+            }
+            _ = app.staticTexts["Chapter Two"].waitForExistence(timeout: 2)
+            snap(app, "11-reader-dark-page")
+
+            if appearance.waitForExistence(timeout: 3), appearance.isHittable {
+                appearance.tap()
+                let paper = app.buttons["Paper"].firstMatch
+                if paper.waitForExistence(timeout: 2), paper.isHittable { paper.tap() }
+                let scroll = app.buttons["Scroll"].firstMatch
+                if scroll.waitForExistence(timeout: 2), scroll.isHittable {
+                    scroll.tap() // dismisses the popover
+                }
+            }
+        }
+
+        // j. Back out to the sidebar, visit the All Books grid.
         var backButton = app.navigationBars.buttons.firstMatch
         if backButton.waitForExistence(timeout: 3) { backButton.tap() }
         let allBooks = app.buttons["sidebar.allBooks"].firstMatch
@@ -212,15 +288,15 @@ final class ReadrAppUITests: XCTestCase {
         if allBooks.waitForExistence(timeout: 3) {
             allBooks.tap()
             _ = app.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 3)
-            snap(app, "08-library-grid")
+            snap(app, "12-library-grid")
         }
 
-        // g. AI providers settings sheet.
+        // k. AI providers settings sheet.
         let settingsButton = button(app, id: "library.settings", label: "AI providers")
         if settingsButton.waitForExistence(timeout: 5) {
             settingsButton.tap()
             _ = app.navigationBars["AI Providers"].waitForExistence(timeout: 3)
-            snap(app, "09-settings")
+            snap(app, "13-settings")
             let done = app.buttons["Done"].firstMatch
             if done.waitForExistence(timeout: 3) { done.tap() }
         }
