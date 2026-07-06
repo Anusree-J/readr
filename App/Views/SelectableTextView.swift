@@ -270,14 +270,18 @@ private struct Representable: UIViewRepresentable {
         view.delegate = context.coordinator
         view.textContainerInset = .zero
         view.adjustsFontForContentSizeCategory = true
-        // Paged mode disables scrolling, and a non-scrolling UITextView lays
-        // its text out at its full intrinsic width — spilling off the page and
-        // clipping at the screen edge. Pin the text container to the view's
-        // width and drop the default line padding so lines wrap to the page
-        // column (see `sizeThatFits`, which feeds it the proposed width).
-        view.textContainer.widthTracksTextView = true
-        view.textContainer.lineFragmentPadding = 0
-        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        if !allowsInternalScrolling {
+            // Paged mode disables scrolling, and a non-scrolling UITextView
+            // lays its text out at its full intrinsic width — spilling off the
+            // page and clipping at the screen edge. Pin the text container to
+            // the view's width and drop the default line padding so lines wrap
+            // to the page column (see `sizeThatFits`, which feeds it the
+            // proposed width). Scoped to paged mode: scroll mode wraps fine
+            // already, and zeroing its 5pt line padding would shift the
+            // scrolling reader's line breaks for no reason.
+            view.textContainer.widthTracksTextView = true
+            view.textContainer.lineFragmentPadding = 0
+        }
         context.coordinator.textView = view
 
         // Tap on an existing highlight opens the edit variant of the bar.
@@ -315,16 +319,23 @@ private struct Representable: UIViewRepresentable {
     /// view wraps to the page column and reports the height it actually needs,
     /// instead of ballooning to its single-line intrinsic width. Scroll mode
     /// returns nil to keep SwiftUI's default fill-and-scroll sizing.
+    /// The fitted height is cached on the coordinator (keyed by width,
+    /// invalidated with the render cache) — `UITextView.sizeThatFits` runs a
+    /// full TextKit layout, far too heavy to repeat on every layout pass.
     func sizeThatFits(
         _ proposal: ProposedViewSize, uiView: UITextView, context: Context
     ) -> CGSize? {
         guard !allowsInternalScrolling,
               let width = proposal.width, width > 0, width.isFinite else { return nil }
-        let fitted = uiView.sizeThatFits(
-            CGSize(width: width, height: .greatestFiniteMagnitude)
-        )
+        let coordinator = context.coordinator
+        if coordinator.fittedWidth != width {
+            coordinator.fittedHeight = uiView.sizeThatFits(
+                CGSize(width: width, height: .greatestFiniteMagnitude)
+            ).height
+            coordinator.fittedWidth = width
+        }
         let maxHeight = proposal.height ?? .infinity
-        return CGSize(width: width, height: min(fitted.height, maxHeight))
+        return CGSize(width: width, height: min(coordinator.fittedHeight, maxHeight))
     }
 
     /// Programmatic jump (search hit / bookmark / notes panel): scroll the
@@ -349,6 +360,10 @@ private struct Representable: UIViewRepresentable {
         var spans: [HighlightSpan] = []
         var onTarget: (AnnotationTarget?) -> Void
         weak var textView: UITextView?
+        /// `sizeThatFits` cache (paged mode): the fitted height for the last
+        /// proposed width. Invalidated whenever the rendered content changes.
+        var fittedWidth: CGFloat = -1
+        var fittedHeight: CGFloat = 0
 
         private var debounce: Timer?
         private var barVisible = false
@@ -371,6 +386,7 @@ private struct Representable: UIViewRepresentable {
                   renderedImageOffsets == imageOffsets else {
                 renderedText = text; renderedSpans = spans; renderedStyle = style
                 renderedImageOffsets = imageOffsets
+                fittedWidth = -1 // content changed — the cached height is stale
                 return true
             }
             return false

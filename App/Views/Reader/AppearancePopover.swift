@@ -1,6 +1,10 @@
 import SwiftUI
 import ReadrKit
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 /// The Aa popover (iOS keeps it; macOS shows the same controls inline in the
 /// toolbar), Marginalia style: a serif A / A font stepper, three theme dots
 /// (paper swatches, ink ring when selected), a hairline segmented layout
@@ -16,17 +20,21 @@ struct AppearancePopover: View {
     var isPDF: Bool = false
     @Binding var pdfShowsOriginal: Bool
     @Environment(\.dismiss) private var dismiss
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    #endif
+    /// Content height reported by the layout, driving the sheet's detent so
+    /// the sheet always fits the controls exactly — no hand-tuned heights to
+    /// drift when a section is added or Dynamic Type grows the text.
+    @State private var measuredHeight: CGFloat = 0
 
     private var theme: ReadingTheme { ReadingTheme(rawValue: themeRaw) ?? .paper }
 
-    /// Compact = the toolbar popover adapts to a bottom sheet (fill the width);
-    /// regular = a real popover bubble (keep it a tidy fixed width).
+    /// iPhone: the toolbar popover adapts to a bottom sheet — fill the width.
+    /// iPad: it stays a real popover bubble — keep a fixed tidy width.
+    /// Decided by idiom, NOT horizontal size class: UIKit hands popover
+    /// content a compact size class even on iPad, so the class can't tell a
+    /// real popover from a sheet adaptation.
     private var isSheetPresentation: Bool {
         #if os(iOS)
-        return horizontalSizeClass == .compact
+        return UIDevice.current.userInterfaceIdiom == .phone
         #else
         return false
         #endif
@@ -65,15 +73,24 @@ struct AppearancePopover: View {
             }
         }
         .padding(20)
-        // Sheet (compact): fill the width so the controls read as a laid-out
-        // sheet rather than a small island stranded in a large surface. Popover
-        // (regular): keep the tidy fixed bubble width.
-        .frame(maxWidth: isSheetPresentation ? .infinity : 300, alignment: .leading)
+        // Sheet (iPhone): fill the width so the controls read as a laid-out
+        // sheet rather than a small island stranded in a large surface.
+        // Popover (iPad): pin the bubble to a fixed width — `maxWidth` alone
+        // would let the popover hug the content's ideal width and collapse
+        // the Spacer-based rows.
+        .frame(width: isSheetPresentation ? nil : 320, alignment: .leading)
+        .frame(maxWidth: isSheetPresentation ? .infinity : nil, alignment: .leading)
         .background(theme.elevated)
         #if os(iOS)
-        // Size the adapted sheet to its content instead of a half/full screen
-        // of empty paper; `.medium` stays reachable for large Dynamic Type.
-        .presentationDetents([.height(isPDF ? 360 : 300), .medium])
+        // Size the adapted sheet to the measured content height, so it fits
+        // exactly at any Dynamic Type size and never strands the controls in
+        // a half-empty screen. `.medium` is the pre-measurement fallback.
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
+            measuredHeight = $0
+        }
+        .presentationDetents(
+            measuredHeight > 0 ? [.height(measuredHeight)] : [.medium]
+        )
         .presentationDragIndicator(.visible)
         #endif
         .presentationBackground(theme.elevated)

@@ -62,10 +62,6 @@ struct PagedChapterView: View {
     /// parent has an adjacent chapter). Keeps the arrows live at the edges.
     var canOverflowBackward = false
     var canOverflowForward = false
-    /// Compact width (iPhone portrait): trim the arrow gutters and page insets
-    /// so the reading column isn't crowded out by chrome — on a phone the
-    /// wide default gutters read as oversized margins.
-    var isCompact = false
     /// A turn ran past either end (−1 backward / +1 forward): the parent
     /// crosses into the adjacent chapter. Arrow keys, the floating buttons,
     /// and swipes all funnel through here, so paging flows through the whole
@@ -74,11 +70,29 @@ struct PagedChapterView: View {
 
     @State private var cache = PaginationCache()
     @FocusState private var focused: Bool
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
-    // Chrome metrics (mirrored in `capacity(for:)` — keep them in sync).
+    /// Compact width (iPhone portrait): trim the arrow gutters and page insets
+    /// so the reading column isn't crowded out by chrome — on a phone the
+    /// wide default gutters read as oversized margins. Read from the
+    /// environment so every embedder gets the right chrome automatically.
+    private var isCompact: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
+    }
+
+    // Chrome metrics (`capacity(for:)` reads these same properties, so the
+    // estimate always matches what the body renders).
     /// Horizontal gutter reserved outside the card for the floating arrows.
-    /// Narrower on compact widths so the arrows don't eat a quarter of a phone.
-    private var arrowGutter: CGFloat { isCompact ? 30 : 52 }
+    /// Narrower on compact widths so the arrows don't eat a quarter of a
+    /// phone — but always wide enough to contain the 34pt buttons at their
+    /// inset, so they never overlap the card or steal its taps.
+    private var arrowGutter: CGFloat { isCompact ? 40 : 52 }
     /// Interior padding of each page on the card.
     private var pageInsets: EdgeInsets {
         isCompact
@@ -86,7 +100,7 @@ struct PagedChapterView: View {
             : EdgeInsets(top: 34, leading: 28, bottom: 26, trailing: 28)
     }
     /// Inset of the floating arrows from the view edge (they sit in the gutter).
-    private var arrowInset: CGFloat { isCompact ? 4 : 9 }
+    private var arrowInset: CGFloat { isCompact ? 3 : 9 }
     private static let footerHeight: CGFloat = 40
 
     /// Memoizes the last pagination so page turns/selection don't re-scan the
@@ -148,7 +162,7 @@ struct PagedChapterView: View {
     // MARK: - Pages
 
     private func paginate(for size: CGSize) -> [Page] {
-        let capacity = capacity(for: size, layout: layout, style: style)
+        let capacity = capacity(for: size)
         if cache.chapterID == chapter.id, cache.capacity == capacity {
             return cache.pages
         }
@@ -184,8 +198,9 @@ struct PagedChapterView: View {
     /// Conservative characters-per-page estimate from geometry + the reader
     /// style's font size, so pages reflow when the user changes text size.
     /// Subtracts the card chrome: arrow gutters, page insets, footer, and a
-    /// first-page kicker allowance.
-    func capacity(for size: CGSize, layout: PageLayout, style: ReaderStyle) -> Int {
+    /// first-page kicker allowance — read from the same instance properties
+    /// the body renders with, so the two can't drift apart.
+    private func capacity(for size: CGSize) -> Int {
         let pointSize = style.fontSize
         let columns = layout == .doublePage ? 2.0 : 1.0
         let horizontalChrome = arrowGutter * 2
@@ -313,7 +328,10 @@ struct PagedChapterView: View {
             )
         }
         .padding(pageInsets)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Top-aligned: the text view sizes to its content now, and the frame's
+        // default .center would float an underfull page (chapter ends, the
+        // paginator's 0.85 safety slack) to the middle of the card.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// Shift a page-coordinate target back into chapter coordinates (text
