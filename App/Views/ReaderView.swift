@@ -261,6 +261,23 @@ struct ReaderView: View {
                     anchorOffset: $pagedAnchor,
                     onAnnotate: { target, action in
                         handleAnnotation(in: chapter, target: target, action: action)
+                    },
+                    canOverflowBackward: chapterIndex > 0,
+                    canOverflowForward: chapterIndex < book.chapters.count - 1,
+                    onOverflow: { direction in
+                        // Paging past a chapter's edge flows into the next/
+                        // previous chapter: forward lands on its first page,
+                        // backward on its LAST (an end-of-text offset — the
+                        // paginator clamps it into the final page).
+                        if direction > 0, chapterIndex < book.chapters.count - 1 {
+                            jump(toChapter: chapterIndex + 1, offset: 0)
+                        } else if direction < 0, chapterIndex > 0 {
+                            let previous = chapterIndex - 1
+                            jump(
+                                toChapter: previous,
+                                offset: max(0, book.chapters[previous].text.count - 1)
+                            )
+                        }
                     }
                 )
             }

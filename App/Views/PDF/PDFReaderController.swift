@@ -317,6 +317,10 @@ final class PDFReaderController: NSObject, ObservableObject {
         #elseif canImport(AppKit)
         guard let pdfView, rect != .zero else { return }
         menuHost.rootView = AnyView(menuView(for: context).padding(2))
+        // AppKit popovers follow NSApp.effectiveAppearance, not the window's
+        // pinned (theme-derived) scheme — adopt the PDF view's appearance so
+        // the frame can't clash with the paper.
+        menuPopover.appearance = pdfView.effectiveAppearance
         // .minY is the visual top edge (PDFView is flipped), so the menu sits
         // above the selection like Apple Books; AppKit flips it below when
         // there's no room.

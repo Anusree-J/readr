@@ -58,6 +58,15 @@ struct PagedChapterView: View {
     @Binding var anchorOffset: Int
     /// Annotation-menu actions, reported in chapter coordinates.
     var onAnnotate: (AnnotationTarget, AnnotationAction) -> Void = { _, _ in }
+    /// Whether a turn past the first/last page has somewhere to go (the
+    /// parent has an adjacent chapter). Keeps the arrows live at the edges.
+    var canOverflowBackward = false
+    var canOverflowForward = false
+    /// A turn ran past either end (−1 backward / +1 forward): the parent
+    /// crosses into the adjacent chapter. Arrow keys, the floating buttons,
+    /// and swipes all funnel through here, so paging flows through the whole
+    /// book instead of stopping at chapter walls.
+    var onOverflow: ((Int) -> Void)? = nil
 
     @State private var cache = PaginationCache()
     @FocusState private var focused: Bool
@@ -97,14 +106,15 @@ struct PagedChapterView: View {
                     HStack {
                         turnButton(
                             glyph: "\u{2039}", direction: -1, in: pages,
-                            disabled: start == 0,
+                            disabled: start == 0 && !canOverflowBackward,
                             help: "Previous page (←)", label: "Previous page"
                         )
                         Spacer()
                         turnButton(
                             glyph: "\u{203A}", direction: +1, in: pages,
-                            disabled: pages.isEmpty
-                                || start + layout.pagesPerSpread >= pages.count,
+                            disabled: (pages.isEmpty
+                                || start + layout.pagesPerSpread >= pages.count)
+                                && !canOverflowForward,
                             help: "Next page (→)", label: "Next page"
                         )
                     }
@@ -120,6 +130,7 @@ struct PagedChapterView: View {
             .onKeyPress(.rightArrow) { turnPage(+1, in: pages); return .handled }
             .onKeyPress(.leftArrow) { turnPage(-1, in: pages); return .handled }
             .onAppear { focused = true }
+            .modifier(SwipeToTurn { direction in turnPage(direction, in: pages) })
         }
     }
 
@@ -192,10 +203,21 @@ struct PagedChapterView: View {
     }
 
     private func turnPage(_ direction: Int, in pages: [Page]) {
-        guard !pages.isEmpty else { return }
+        guard !pages.isEmpty else {
+            if direction > 0, canOverflowForward { onOverflow?(1) }
+            if direction < 0, canOverflowBackward { onOverflow?(-1) }
+            return
+        }
         let next = startIndex(in: pages) + direction * layout.pagesPerSpread
-        let clamped = min(max(0, next), pages.count - 1)
-        anchorOffset = pages[clamped].range.lowerBound
+        if next < 0 {
+            if canOverflowBackward { onOverflow?(-1) }
+            return
+        }
+        if next >= pages.count {
+            if canOverflowForward { onOverflow?(1) }
+            return
+        }
+        anchorOffset = pages[next].range.lowerBound
     }
 
     // MARK: - Card & pages
@@ -270,6 +292,10 @@ struct PagedChapterView: View {
                 },
                 style: style,
                 inlineImages: pageImages,
+                // Pages fit by construction — internal scrolling off, so the
+                // platform text view can't claim the swipe (iOS pan) or
+                // rubber-band under it (macOS elasticity).
+                allowsInternalScrolling: false,
                 onAnnotate: { target, action in
                     onAnnotate(chapterTarget(from: target, origin: origin), action)
                 }
@@ -357,3 +383,117 @@ struct PagedChapterView: View {
         }
     }
 }
+
+// MARK: - Swipe to turn
+
+/// Turns horizontal swipes into page turns (−1 back / +1 forward), matching
+/// the platform's native gesture: a drag on iOS, a two-finger trackpad swipe
+/// on macOS. Natural direction — content follows the fingers, so swiping left
+/// goes forward.
+private struct SwipeToTurn: ViewModifier {
+    let onTurn: (Int) -> Void
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.gesture(
+            DragGesture(minimumDistance: 40)
+                .onEnded { value in
+                    let h = value.translation.width
+                    let v = value.translation.height
+                    // Deliberate horizontal swipes only — a sloppy vertical
+                    // drag must not turn pages, and neither should a slow
+                    // horizontal selection-handle drag (flicks carry
+                    // velocity; handle drags end near-stationary).
+                    guard abs(h) > abs(v) * 1.2,
+                          abs(value.velocity.width) > 220 else { return }
+                    onTurn(h < 0 ? +1 : -1)
+                }
+        )
+        #else
+        content.background(MacTrackpadSwipeCatcher(onSwipe: onTurn))
+        #endif
+    }
+}
+
+#if canImport(AppKit)
+/// Observes scroll-wheel phases via a local event monitor and reports one
+/// page turn per completed two-finger horizontal swipe. A monitor (not a
+/// gesture recognizer) because the page's NSScrollView sits above us and
+/// would swallow direct events; momentum events are ignored so one physical
+/// swipe never turns two pages. Only fires for events over this view in its
+/// own window.
+private struct MacTrackpadSwipeCatcher: NSViewRepresentable {
+    let onSwipe: (Int) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onSwipe: onSwipe) }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.install(on: view)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.onSwipe = onSwipe
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.remove()
+    }
+
+    final class Coordinator {
+        var onSwipe: (Int) -> Void
+        private var monitor: Any?
+        private weak var view: NSView?
+        private var accumulatedX: CGFloat = 0
+        private var accumulatedY: CGFloat = 0
+
+        init(onSwipe: @escaping (Int) -> Void) {
+            self.onSwipe = onSwipe
+        }
+
+        func install(on view: NSView) {
+            self.view = view
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                self?.handle(event)
+                return event
+            }
+        }
+
+        func remove() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        deinit {
+            remove()
+        }
+
+        private func handle(_ event: NSEvent) {
+            guard let view, let window = view.window, event.window === window else { return }
+            let location = view.convert(event.locationInWindow, from: nil)
+            guard view.bounds.contains(location) else { return }
+            // Momentum after the fingers lift must not turn a second page.
+            guard event.momentumPhase.isEmpty else { return }
+            switch event.phase {
+            case .began:
+                accumulatedX = 0
+                accumulatedY = 0
+            case .changed:
+                accumulatedX += event.scrollingDeltaX
+                accumulatedY += event.scrollingDeltaY
+            case .ended:
+                // Deliberate horizontal travel only; natural scrolling means
+                // content follows the fingers, so left = next page.
+                if abs(accumulatedX) > 60, abs(accumulatedX) > abs(accumulatedY) * 1.5 {
+                    onSwipe(accumulatedX < 0 ? +1 : -1)
+                }
+                accumulatedX = 0
+                accumulatedY = 0
+            default:
+                break
+            }
+        }
+    }
+}
+#endif

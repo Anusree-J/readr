@@ -179,11 +179,23 @@ struct LibraryGridView: View {
     @ViewBuilder
     private var emptyView: some View {
         if query.isEmpty {
-            ContentUnavailableView(
-                "Nothing here yet",
-                systemImage: "books.vertical",
-                description: Text("Use Import, or drag EPUB, PDF, or text files into the window.")
-            )
+            // Themed by hand — a system ContentUnavailableView colors itself
+            // for the OS appearance, which turned near-invisible on paper
+            // when the Mac ran dark mode.
+            VStack(spacing: 14) {
+                Image(systemName: "books.vertical")
+                    .font(.system(size: 34, weight: .light))
+                    .foregroundStyle(theme.faint)
+                Text("Nothing here yet")
+                    .font(.system(size: 19, weight: .semibold, design: .serif))
+                    .foregroundStyle(theme.inkColor)
+                Text("Use Import, or drag EPUB, PDF, or text files into the window.")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(theme.muted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ContentUnavailableView.search(text: query)
         }
