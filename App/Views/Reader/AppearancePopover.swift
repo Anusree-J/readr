@@ -16,38 +16,81 @@ struct AppearancePopover: View {
     var isPDF: Bool = false
     @Binding var pdfShowsOriginal: Bool
     @Environment(\.dismiss) private var dismiss
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     private var theme: ReadingTheme { ReadingTheme(rawValue: themeRaw) ?? .paper }
 
+    /// Compact = the toolbar popover adapts to a bottom sheet (fill the width);
+    /// regular = a real popover bubble (keep it a tidy fixed width).
+    private var isSheetPresentation: Bool {
+        #if os(iOS)
+        return horizontalSizeClass == .compact
+        #else
+        return false
+        #endif
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 14) {
-                fontStepper
-                Spacer()
-                HStack(spacing: 8) {
-                    ForEach(ReadingTheme.allCases) { option in
-                        themeDot(option)
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Appearance")
+                .font(.system(size: 17, weight: .semibold, design: .serif))
+                .foregroundStyle(theme.inkColor)
+
+            section("Text & theme") {
+                HStack(spacing: 14) {
+                    fontStepper
+                    Spacer()
+                    HStack(spacing: 8) {
+                        ForEach(ReadingTheme.allCases) { option in
+                            themeDot(option)
+                        }
                     }
                 }
             }
 
-            layoutPicker
+            section("Layout") { layoutPicker }
 
             if isPDF {
-                Rectangle().fill(theme.line).frame(height: 1)
-                Picker("PDF display", selection: $pdfShowsOriginal) {
-                    Text("Original pages").tag(true)
-                    Text("Reading view").tag(false)
+                section("PDF") {
+                    Picker("PDF display", selection: $pdfShowsOriginal) {
+                        Text("Original pages").tag(true)
+                        Text("Reading view").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .help("Show the PDF's original pages, or its extracted text with highlights")
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .help("Show the PDF's original pages, or its extracted text with highlights")
             }
         }
-        .padding(16)
-        .frame(width: 288)
+        .padding(20)
+        // Sheet (compact): fill the width so the controls read as a laid-out
+        // sheet rather than a small island stranded in a large surface. Popover
+        // (regular): keep the tidy fixed bubble width.
+        .frame(maxWidth: isSheetPresentation ? .infinity : 300, alignment: .leading)
         .background(theme.elevated)
+        #if os(iOS)
+        // Size the adapted sheet to its content instead of a half/full screen
+        // of empty paper; `.medium` stays reachable for large Dynamic Type.
+        .presentationDetents([.height(isPDF ? 360 : 300), .medium])
+        .presentationDragIndicator(.visible)
+        #endif
         .presentationBackground(theme.elevated)
+    }
+
+    /// A captioned group: a faint section label above its control row.
+    @ViewBuilder
+    private func section(
+        _ title: String, @ViewBuilder content: () -> some View
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.system(size: 11, weight: .medium))
+                .kerning(1.5)
+                .foregroundStyle(theme.faint)
+            content()
+        }
     }
 
     // MARK: - Font stepper (serif A / A with a hairline divider)

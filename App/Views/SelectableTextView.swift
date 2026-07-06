@@ -270,6 +270,14 @@ private struct Representable: UIViewRepresentable {
         view.delegate = context.coordinator
         view.textContainerInset = .zero
         view.adjustsFontForContentSizeCategory = true
+        // Paged mode disables scrolling, and a non-scrolling UITextView lays
+        // its text out at its full intrinsic width — spilling off the page and
+        // clipping at the screen edge. Pin the text container to the view's
+        // width and drop the default line padding so lines wrap to the page
+        // column (see `sizeThatFits`, which feeds it the proposed width).
+        view.textContainer.widthTracksTextView = true
+        view.textContainer.lineFragmentPadding = 0
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         context.coordinator.textView = view
 
         // Tap on an existing highlight opens the edit variant of the bar.
@@ -301,6 +309,22 @@ private struct Representable: UIViewRepresentable {
             )
         }
         performPendingScroll(on: view)
+    }
+
+    /// Paged mode: honor the width SwiftUI proposes so the non-scrolling text
+    /// view wraps to the page column and reports the height it actually needs,
+    /// instead of ballooning to its single-line intrinsic width. Scroll mode
+    /// returns nil to keep SwiftUI's default fill-and-scroll sizing.
+    func sizeThatFits(
+        _ proposal: ProposedViewSize, uiView: UITextView, context: Context
+    ) -> CGSize? {
+        guard !allowsInternalScrolling,
+              let width = proposal.width, width > 0, width.isFinite else { return nil }
+        let fitted = uiView.sizeThatFits(
+            CGSize(width: width, height: .greatestFiniteMagnitude)
+        )
+        let maxHeight = proposal.height ?? .infinity
+        return CGSize(width: width, height: min(fitted.height, maxHeight))
     }
 
     /// Programmatic jump (search hit / bookmark / notes panel): scroll the

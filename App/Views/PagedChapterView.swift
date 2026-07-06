@@ -62,6 +62,10 @@ struct PagedChapterView: View {
     /// parent has an adjacent chapter). Keeps the arrows live at the edges.
     var canOverflowBackward = false
     var canOverflowForward = false
+    /// Compact width (iPhone portrait): trim the arrow gutters and page insets
+    /// so the reading column isn't crowded out by chrome — on a phone the
+    /// wide default gutters read as oversized margins.
+    var isCompact = false
     /// A turn ran past either end (−1 backward / +1 forward): the parent
     /// crosses into the adjacent chapter. Arrow keys, the floating buttons,
     /// and swipes all funnel through here, so paging flows through the whole
@@ -73,9 +77,16 @@ struct PagedChapterView: View {
 
     // Chrome metrics (mirrored in `capacity(for:)` — keep them in sync).
     /// Horizontal gutter reserved outside the card for the floating arrows.
-    private static let arrowGutter: CGFloat = 52
+    /// Narrower on compact widths so the arrows don't eat a quarter of a phone.
+    private var arrowGutter: CGFloat { isCompact ? 30 : 52 }
     /// Interior padding of each page on the card.
-    private static let pageInsets = EdgeInsets(top: 34, leading: 28, bottom: 26, trailing: 28)
+    private var pageInsets: EdgeInsets {
+        isCompact
+            ? EdgeInsets(top: 28, leading: 20, bottom: 22, trailing: 20)
+            : EdgeInsets(top: 34, leading: 28, bottom: 26, trailing: 28)
+    }
+    /// Inset of the floating arrows from the view edge (they sit in the gutter).
+    private var arrowInset: CGFloat { isCompact ? 4 : 9 }
     private static let footerHeight: CGFloat = 40
 
     /// Memoizes the last pagination so page turns/selection don't re-scan the
@@ -100,7 +111,7 @@ struct PagedChapterView: View {
             VStack(spacing: 0) {
                 ZStack {
                     pageCard(visible: visible)
-                        .padding(.horizontal, Self.arrowGutter)
+                        .padding(.horizontal, arrowGutter)
                         .padding(.vertical, 18)
 
                     HStack {
@@ -118,7 +129,7 @@ struct PagedChapterView: View {
                             help: "Next page (→)", label: "Next page"
                         )
                     }
-                    .padding(.horizontal, 9)
+                    .padding(.horizontal, arrowInset)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -137,7 +148,7 @@ struct PagedChapterView: View {
     // MARK: - Pages
 
     private func paginate(for size: CGSize) -> [Page] {
-        let capacity = Self.capacity(for: size, layout: layout, style: style)
+        let capacity = capacity(for: size, layout: layout, style: style)
         if cache.chapterID == chapter.id, cache.capacity == capacity {
             return cache.pages
         }
@@ -174,14 +185,14 @@ struct PagedChapterView: View {
     /// style's font size, so pages reflow when the user changes text size.
     /// Subtracts the card chrome: arrow gutters, page insets, footer, and a
     /// first-page kicker allowance.
-    static func capacity(for size: CGSize, layout: PageLayout, style: ReaderStyle) -> Int {
+    func capacity(for size: CGSize, layout: PageLayout, style: ReaderStyle) -> Int {
         let pointSize = style.fontSize
         let columns = layout == .doublePage ? 2.0 : 1.0
         let horizontalChrome = arrowGutter * 2
             + (pageInsets.leading + pageInsets.trailing) * columns
         let pageWidth = max(1, (size.width - horizontalChrome) / columns)
         // 18+18 card margin, insets, footer, and ~36 kicker allowance.
-        let verticalChrome = 36 + pageInsets.top + pageInsets.bottom + footerHeight + 36
+        let verticalChrome = 36 + pageInsets.top + pageInsets.bottom + Self.footerHeight + 36
         let pageHeight = max(1, size.height - verticalChrome)
         let charsPerLine = pageWidth / (pointSize * 0.55)
         let lines = pageHeight / (pointSize * 1.45)
@@ -301,7 +312,7 @@ struct PagedChapterView: View {
                 }
             )
         }
-        .padding(Self.pageInsets)
+        .padding(pageInsets)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 

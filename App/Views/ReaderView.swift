@@ -79,6 +79,15 @@ struct ReaderView: View {
         return stored
     }
 
+    /// True on a compact-width phone; drives the paged reader's tighter chrome.
+    private var isCompactWidth: Bool {
+        #if os(iOS)
+        return horizontalSizeClass == .compact
+        #else
+        return false
+        #endif
+    }
+
     /// Everything the text renderer needs, derived from the persisted
     /// appearance settings (clamped in case stored values drift out of range).
     private var style: ReaderStyle {
@@ -264,6 +273,7 @@ struct ReaderView: View {
                     },
                     canOverflowBackward: chapterIndex > 0,
                     canOverflowForward: chapterIndex < book.chapters.count - 1,
+                    isCompact: isCompactWidth,
                     onOverflow: { direction in
                         // Paging past a chapter's edge flows into the next/
                         // previous chapter: forward lands on its first page,
