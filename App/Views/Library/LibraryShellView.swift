@@ -214,7 +214,9 @@ struct LibraryShellView: View {
         }
         .font(.system(size: 11))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
+        // 22 = the sidebar rows' section inset + text padding — 10 alone
+        // hugged the window edge and clipped the first character.
+        .padding(.horizontal, 22)
         .padding(.top, 12)
         .padding(.bottom, 10)
         .overlay(alignment: .top) {

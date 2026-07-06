@@ -10,12 +10,24 @@ struct ReadrApp: App {
     /// Highlights & Notes review.
     @StateObject private var model = AppModel()
 
+    /// The reading theme also decides the SYSTEM color scheme of every window.
+    /// Readr paints its own paper surfaces, so the OS appearance must follow
+    /// the theme — otherwise a dark-mode Mac renders system-styled pieces
+    /// (title bars, empty states, `.primary` text, popover chrome) in white on
+    /// our light paper. Paper/Sepia pin light; Dark pins dark.
+    @AppStorage("readingTheme") private var themeRaw = ReadingTheme.paper.rawValue
+
+    private var colorScheme: ColorScheme {
+        (ReadingTheme(rawValue: themeRaw) ?? .paper) == .night ? .dark : .light
+    }
+
     var body: some Scene {
         #if os(macOS)
         WindowGroup {
             LibraryShellView()
                 .environmentObject(model)
                 .frame(minWidth: 900, minHeight: 600)
+                .preferredColorScheme(colorScheme)
         }
         .defaultSize(width: 1120, height: 740)
 
@@ -25,6 +37,7 @@ struct ReadrApp: App {
         WindowGroup("Reader", for: Book.ID.self) { $bookID in
             ReaderWindowRoot(bookID: bookID)
                 .environmentObject(model)
+                .preferredColorScheme(colorScheme)
         }
         .windowToolbarStyle(.unifiedCompact)
         .defaultSize(width: 780, height: 920)
@@ -33,11 +46,13 @@ struct ReadrApp: App {
             ProviderSettingsView(app: model)
                 .environmentObject(model)
                 .frame(minWidth: 480, minHeight: 420)
+                .preferredColorScheme(colorScheme)
         }
         #else
         WindowGroup {
             LibraryShellView()
                 .environmentObject(model)
+                .preferredColorScheme(colorScheme)
         }
         #endif
     }

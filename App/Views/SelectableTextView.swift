@@ -92,6 +92,10 @@ struct SelectableTextView: View {
     /// be targeted again later. Defaulted so paged-mode embedders, which
     /// never jump within a page, are unaffected.
     var scrollToOffset: Binding<Int?>? = nil
+    /// Paged embedders size their text to fit and set this false so the
+    /// platform text view never claims swipe/scroll gestures (page turns need
+    /// them) and never rubber-bands. Scroll mode keeps the default.
+    var allowsInternalScrolling = true
     /// An annotation-menu action, with the target in `text` coordinates.
     var onAnnotate: (AnnotationTarget, AnnotationAction) -> Void = { _, _ in }
 
@@ -109,6 +113,7 @@ struct SelectableTextView: View {
             // the host sets a new target.
             scrollTarget: scrollToOffset?.wrappedValue,
             clearScrollTarget: { scrollToOffset?.wrappedValue = nil },
+            allowsInternalScrolling: allowsInternalScrolling,
             onTarget: { barTarget = $0 }
         )
         .overlay(alignment: .bottom) {
@@ -137,6 +142,7 @@ struct SelectableTextView: View {
             // the host sets a new target.
             scrollTarget: scrollToOffset?.wrappedValue,
             clearScrollTarget: { scrollToOffset?.wrappedValue = nil },
+            allowsInternalScrolling: allowsInternalScrolling,
             onAnnotate: onAnnotate
         )
     }
@@ -249,6 +255,7 @@ private struct Representable: UIViewRepresentable {
     let scrollTarget: Int?
     /// Clears the host's scroll target once the scroll has been issued.
     let clearScrollTarget: () -> Void
+    let allowsInternalScrolling: Bool
     /// Reports the annotation target to show the bar for (nil ⇒ hide).
     let onTarget: (AnnotationTarget?) -> Void
 
@@ -256,6 +263,9 @@ private struct Representable: UIViewRepresentable {
         let view = AnnotatingUITextView()
         view.isEditable = false
         view.isSelectable = true
+        // Paged mode: the page fits by construction, and a scroll-enabled
+        // text view would claim horizontal swipes meant to turn the page.
+        view.isScrollEnabled = allowsInternalScrolling
         view.backgroundColor = .clear
         view.delegate = context.coordinator
         view.textContainerInset = .zero
@@ -437,15 +447,23 @@ private struct Representable: NSViewRepresentable {
     let scrollTarget: Int?
     /// Clears the host's scroll target once the scroll has been issued.
     let clearScrollTarget: () -> Void
+    let allowsInternalScrolling: Bool
     let onAnnotate: (AnnotationTarget, AnnotationAction) -> Void
 
     func makeNSView(context: Context) -> NSScrollView {
         // Built by hand (not NSTextView.scrollableTextView()) so the document
         // view is our mouse-up-reporting subclass.
         let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
+        scroll.hasVerticalScroller = allowsInternalScrolling
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
+        if !allowsInternalScrolling {
+            // Paged mode: pages fit by construction. Kill elasticity so
+            // two-finger swipes rubber-band nothing and reach the page-turn
+            // catcher instead.
+            scroll.verticalScrollElasticity = .none
+            scroll.horizontalScrollElasticity = .none
+        }
 
         let textView = AnnotatingNSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
         textView.isEditable = false
