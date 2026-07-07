@@ -368,7 +368,12 @@ struct PagedChapterView: View {
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(style.theme.elevated))
                 .overlay(Circle().strokeBorder(style.theme.line, lineWidth: 1))
-                .contentShape(Circle())
+                // The visible control is a 34pt circle, but the hit area is
+                // the full-height gutter strip beside the card (Apple Books
+                // edge-tap) — a 34pt circle is a needlessly hard target,
+                // especially one-handed on a phone.
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)
