@@ -192,37 +192,140 @@ final class ReadrAppUITests: XCTestCase {
                 createArticle.tap()
                 _ = app.staticTexts["No AI provider connected"].waitForExistence(timeout: 3)
                 snap(app, "07-article-studio")
-                let done = app.buttons["Done"].firstMatch
+                // Scoped to the studio's nav bar: the notes panel behind it
+                // has its own Done now.
+                let done = app.navigationBars.buttons["Done"].firstMatch
                 if done.waitForExistence(timeout: 2) { done.tap() }
             }
-            // Close the notes panel (sheet on iPhone).
+            // Close the notes panel via its own Done, then verify the reader
+            // is interactive again — run #56 showed a lingering sheet turns
+            // every later capture into the same stuck-sheet image. Fall back
+            // to toggling the toolbar button.
+            let closeNotes = app.buttons["notes.done"].firstMatch
+            if closeNotes.waitForExistence(timeout: 2), closeNotes.isHittable {
+                closeNotes.tap()
+            }
+            let tocProbe = button(app, id: "reader.toc", label: "Table of contents")
+            if !tocProbe.waitForExistence(timeout: 2) || !tocProbe.isHittable {
+                notesButton.tap() // toggle the inspector closed
+                _ = tocProbe.waitForExistence(timeout: 2)
+            }
+        }
+
+        // f. Table of contents: open, capture, jump to Chapter Two.
+        let toc = button(app, id: "reader.toc", label: "Table of contents")
+        if toc.waitForExistence(timeout: 3), toc.isHittable {
+            toc.tap()
+            let chapterTwo = app.buttons["Chapter Two"].firstMatch
+            if chapterTwo.waitForExistence(timeout: 3) {
+                snap(app, "08-toc")
+                chapterTwo.tap() // jumps and closes
+                _ = app.staticTexts["Chapter Two"].waitForExistence(timeout: 3)
+            } else {
+                snap(app, "08-toc")
+            }
+        }
+
+        // g. In-book search: query, results list, jump to the first hit.
+        let search = button(app, id: "reader.search", label: "Find in book")
+        if search.waitForExistence(timeout: 3), search.isHittable {
+            search.tap()
+            let field = app.textFields["reader.search.field"].firstMatch
+            if field.waitForExistence(timeout: 3) {
+                field.tap()
+                // CI simulators sometimes keep a hardware keyboard attached;
+                // only type when the software keyboard actually appeared so a
+                // focus hiccup skips the query instead of failing the walk.
+                if app.keyboards.count > 0 {
+                    field.typeText("Winston")
+                    _ = app.buttons.containing(
+                        NSPredicate(format: "label CONTAINS %@", "Winston")
+                    ).firstMatch.waitForExistence(timeout: 4)
+                }
+                snap(app, "09-search")
+                let hit = app.buttons.containing(
+                    NSPredicate(format: "label CONTAINS %@", "Winston")
+                ).firstMatch
+                if hit.exists && hit.isHittable {
+                    hit.tap() // jumps and closes
+                } else {
+                    app.swipeDown() // dismiss the sheet without a hit
+                }
+            }
+        }
+
+        // h. Ask the book (provider guidance without a configured LLM).
+        let ask = button(app, id: "reader.ask", label: "Ask the book")
+        if ask.waitForExistence(timeout: 3), ask.isHittable {
+            ask.tap()
+            _ = app.navigationBars["Ask the book"].waitForExistence(timeout: 3)
+            snap(app, "10-ask")
             let done = app.buttons["Done"].firstMatch
             if done.waitForExistence(timeout: 2) { done.tap() }
         }
 
-        // f. Back out to the sidebar, visit the All Books grid.
-        var backButton = app.navigationBars.buttons.firstMatch
-        if backButton.waitForExistence(timeout: 3) { backButton.tap() }
-        let allBooks = app.buttons["sidebar.allBooks"].firstMatch
-        if !allBooks.waitForExistence(timeout: 3) {
-            // Compact width may need one more pop to reach the sidebar list.
-            backButton = app.navigationBars.buttons.firstMatch
-            if backButton.waitForExistence(timeout: 2) { backButton.tap() }
-        }
-        if allBooks.waitForExistence(timeout: 3) {
-            allBooks.tap()
-            _ = app.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 3)
-            snap(app, "08-library-grid")
+        // i. Dark theme + single-page layout (then restore Paper + Scroll so
+        // the persisted appearance doesn't leak into other tests).
+        if appearance.waitForExistence(timeout: 3), appearance.isHittable {
+            appearance.tap()
+            let dark = app.buttons["Dark"].firstMatch
+            if dark.waitForExistence(timeout: 2), dark.isHittable { dark.tap() }
+            let singlePage = app.buttons["Single page"].firstMatch
+            if singlePage.waitForExistence(timeout: 2), singlePage.isHittable {
+                singlePage.tap() // dismisses the popover
+            }
+            _ = app.staticTexts["Chapter Two"].waitForExistence(timeout: 2)
+            snap(app, "11-reader-dark-page")
+
+            if appearance.waitForExistence(timeout: 3), appearance.isHittable {
+                appearance.tap()
+                let paper = app.buttons["Paper"].firstMatch
+                if paper.waitForExistence(timeout: 2), paper.isHittable { paper.tap() }
+                let scroll = app.buttons["Scroll"].firstMatch
+                if scroll.waitForExistence(timeout: 2), scroll.isHittable {
+                    scroll.tap() // dismisses the popover
+                }
+            }
         }
 
-        // g. AI providers settings sheet.
-        let settingsButton = button(app, id: "library.settings", label: "AI providers")
-        if settingsButton.waitForExistence(timeout: 5) {
+        // j. Settings, sidebar, and library grid from a fresh launch —
+        // chaining back-pops through the end-of-walk screen proved flaky
+        // (these shots never appeared in published galleries). A relaunch
+        // lands on Home deterministically.
+        app.terminate()
+        let app2 = launchSeeded()
+        _ = app2.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 10)
+
+        // The AI-providers gear lives on Home's toolbar — capture before
+        // navigating away (the sidebar root doesn't carry it).
+        let settingsButton = button(app2, id: "library.settings", label: "AI providers")
+        if settingsButton.waitForExistence(timeout: 5), settingsButton.isHittable {
             settingsButton.tap()
-            _ = app.navigationBars["AI Providers"].waitForExistence(timeout: 3)
-            snap(app, "09-settings")
-            let done = app.buttons["Done"].firstMatch
+            _ = app2.navigationBars["AI Providers"].waitForExistence(timeout: 3)
+            snap(app2, "12-settings")
+            let done = app2.buttons["Done"].firstMatch
             if done.waitForExistence(timeout: 3) { done.tap() }
+        }
+
+        // Home's back button is labeled "Readr" (the sidebar root's title).
+        let toSidebar = app2.buttons["Readr"].firstMatch
+        if toSidebar.waitForExistence(timeout: 3) {
+            toSidebar.tap()
+            _ = app2.staticTexts["All Books"].firstMatch.waitForExistence(timeout: 3)
+            snap(app2, "13-sidebar")
+        }
+
+        // iOS sidebar rows are List(selection:) Labels — they surface to
+        // XCUITest as cells, NOT buttons (why the old buttons-based lookup
+        // never matched). Fall back to the visible label text.
+        let allBooksCell = app2.cells["sidebar.allBooks"].firstMatch
+        let allBooks = allBooksCell.exists
+            ? allBooksCell
+            : app2.staticTexts["All Books"].firstMatch
+        if allBooks.waitForExistence(timeout: 3), allBooks.isHittable {
+            allBooks.tap()
+            _ = app2.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 3)
+            snap(app2, "14-library-grid")
         }
     }
 }

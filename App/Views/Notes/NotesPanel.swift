@@ -1,6 +1,10 @@
 import SwiftUI
 import ReadrKit
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 /// Right-hand reader inspector (⌘⇧N): this book's annotations in reading
 /// order, with one-click Markdown export and the Article studio a tap away.
 /// This panel is the heart of the wedge over Apple Books — highlights stream
@@ -10,6 +14,11 @@ struct NotesPanel: View {
     let book: Book
     var onJumpHighlight: ((Highlight) -> Void)? = nil
     var onJumpPDF: ((PDFHighlight) -> Void)? = nil
+    /// Host-provided close action. On iPhone the inspector presents as a
+    /// sheet whose only built-in exit is the drag grabber — a visible Done
+    /// keeps dismissal discoverable. iPad/macOS side columns hide it (the
+    /// toolbar toggle is the idiomatic exit there).
+    var onClose: (() -> Void)? = nil
 
     @AppStorage("readingTheme") private var themeRaw = ReadingTheme.paper.rawValue
     private var theme: ReadingTheme { ReadingTheme(rawValue: themeRaw) ?? .paper }
@@ -18,16 +27,34 @@ struct NotesPanel: View {
         model.highlights(for: book).count + model.pdfHighlights(for: book).count
     }
 
+    private var showsCloseButton: Bool {
+        #if os(iOS)
+        return onClose != nil && UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        return false
+        #endif
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Notes")
-                    .font(.system(size: 20, weight: .semibold, design: .serif))
-                    .foregroundStyle(theme.inkColor)
-                if annotationCount > 0 {
-                    Text(annotationCount == 1 ? "1 annotation" : "\(annotationCount) annotations")
-                        .font(.system(size: 12).monospacedDigit())
-                        .foregroundStyle(theme.muted)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Notes")
+                        .font(.system(size: 20, weight: .semibold, design: .serif))
+                        .foregroundStyle(theme.inkColor)
+                    if annotationCount > 0 {
+                        Text(annotationCount == 1 ? "1 annotation" : "\(annotationCount) annotations")
+                            .font(.system(size: 12).monospacedDigit())
+                            .foregroundStyle(theme.muted)
+                    }
+                }
+                if showsCloseButton {
+                    Spacer()
+                    Button("Done") { onClose?() }
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(theme.inkColor)
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("notes.done")
                 }
             }
             NotesHeaderActions(book: book)

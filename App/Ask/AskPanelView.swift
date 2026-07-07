@@ -13,6 +13,10 @@ struct AskPanelView: View {
     @StateObject private var vm: AskViewModel
     @State private var question = ""
     @State private var expandedCitation: Int?
+    /// Provider settings sheet, reachable from the no-provider empty state so
+    /// the guidance is actionable (J4: "guided to set up a provider first").
+    @State private var showProviders = false
+    @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage("readingTheme") private var themeRaw = ReadingTheme.paper.rawValue
@@ -35,11 +39,29 @@ struct AskPanelView: View {
                 if vm.hasProvider {
                     askContent
                 } else {
-                    ContentUnavailableView(
-                        "No AI provider connected",
-                        systemImage: "sparkles",
-                        description: Text("Add an API key, sign in, or pick a local model under AI Providers to ask questions.")
-                    )
+                    // Same actionable empty state as the Article studio: the
+                    // guidance carries a button, not just directions.
+                    ContentUnavailableView {
+                        Label("No AI provider connected", systemImage: "sparkles")
+                    } description: {
+                        Text("Add an API key, sign in, or pick a local model to ask questions.")
+                    } actions: {
+                        Button {
+                            showProviders = true
+                        } label: {
+                            Text("Open AI Providers")
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .foregroundStyle(theme.background)
+                                .padding(.vertical, 9)
+                                .padding(.horizontal, 16)
+                                .background(theme.inkColor, in: RoundedRectangle(cornerRadius: 9))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .sheet(isPresented: $showProviders) {
+                        ProviderSettingsView(app: model)
+                            .environmentObject(model)
+                    }
                 }
             }
             .background(theme.background)

@@ -149,10 +149,19 @@ struct ReaderView: View {
                             where: { $0.id == highlight.chapterID }
                         ) else { return }
                         jump(toChapter: index, offset: highlight.range.lowerBound)
+                        // iPhone: the inspector is a covering sheet — close it
+                        // so the reader sees the jump land. iPad/macOS side
+                        // columns stay open beside the page.
+                        #if os(iOS)
+                        if UIDevice.current.userInterfaceIdiom == .phone {
+                            showNotes = false
+                        }
+                        #endif
                     },
                     // Jumping to a PDF page needs a page binding into
                     // PDFReaderView; v2 ships without one.
-                    onJumpPDF: nil
+                    onJumpPDF: nil,
+                    onClose: { showNotes = false }
                 )
                 .inspectorColumnWidth(min: 280, ideal: 340, max: 480)
             }
@@ -412,21 +421,45 @@ struct ReaderView: View {
         .accessibilityLabel("Table of contents")
         .help("Table of contents")
         .popover(isPresented: $showTOC) {
-            List(0..<book.chapters.count, id: \.self) { index in
-                Button {
-                    showTOC = false
-                    jump(toChapter: index)
-                } label: {
-                    Text(book.chapters[index].title ?? "Chapter \(index + 1)")
-                        .fontWeight(index == chapterIndex ? .bold : .regular)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+            // Marginalia-themed contents: serif rows on the elevated surface
+            // (the default white List clashed with the reading page — seen in
+            // the CI gallery), sized to a half sheet on iPhone instead of a
+            // full screen for a handful of rows.
+            VStack(alignment: .leading, spacing: 0) {
+                Text("CONTENTS")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .kerning(1.5)
+                    .foregroundStyle(style.theme.faint)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 6)
+                List(0..<book.chapters.count, id: \.self) { index in
+                    Button {
+                        showTOC = false
+                        jump(toChapter: index)
+                    } label: {
+                        Text(book.chapters[index].title ?? "Chapter \(index + 1)")
+                            .font(.system(size: 14.5, design: .serif))
+                            .fontWeight(index == chapterIndex ? .bold : .regular)
+                            .foregroundStyle(style.theme.inkColor)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 3)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparatorTint(style.theme.line)
                 }
-                .buttonStyle(.plain)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
-            .listStyle(.plain)
             .frame(minWidth: 260, idealWidth: 300, minHeight: 280, idealHeight: 360)
-            .padding(.vertical, 8)
+            .background(style.theme.elevated)
+            #if os(iOS)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            #endif
+            .presentationBackground(style.theme.elevated)
         }
     }
 

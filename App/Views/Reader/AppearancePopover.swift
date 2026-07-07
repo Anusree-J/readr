@@ -1,6 +1,10 @@
 import SwiftUI
 import ReadrKit
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 /// The Aa popover (iOS keeps it; macOS shows the same controls inline in the
 /// toolbar), Marginalia style: a serif A / A font stepper, three theme dots
 /// (paper swatches, ink ring when selected), a hairline segmented layout
@@ -16,38 +20,94 @@ struct AppearancePopover: View {
     var isPDF: Bool = false
     @Binding var pdfShowsOriginal: Bool
     @Environment(\.dismiss) private var dismiss
+    /// Content height reported by the layout, driving the sheet's detent so
+    /// the sheet always fits the controls exactly — no hand-tuned heights to
+    /// drift when a section is added or Dynamic Type grows the text.
+    @State private var measuredHeight: CGFloat = 0
 
     private var theme: ReadingTheme { ReadingTheme(rawValue: themeRaw) ?? .paper }
 
+    /// iPhone: the toolbar popover adapts to a bottom sheet — fill the width.
+    /// iPad: it stays a real popover bubble — keep a fixed tidy width.
+    /// Decided by idiom, NOT horizontal size class: UIKit hands popover
+    /// content a compact size class even on iPad, so the class can't tell a
+    /// real popover from a sheet adaptation.
+    private var isSheetPresentation: Bool {
+        #if os(iOS)
+        return UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        return false
+        #endif
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 14) {
-                fontStepper
-                Spacer()
-                HStack(spacing: 8) {
-                    ForEach(ReadingTheme.allCases) { option in
-                        themeDot(option)
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Appearance")
+                .font(.system(size: 17, weight: .semibold, design: .serif))
+                .foregroundStyle(theme.inkColor)
+
+            section("Text & theme") {
+                HStack(spacing: 14) {
+                    fontStepper
+                    Spacer()
+                    HStack(spacing: 8) {
+                        ForEach(ReadingTheme.allCases) { option in
+                            themeDot(option)
+                        }
                     }
                 }
             }
 
-            layoutPicker
+            section("Layout") { layoutPicker }
 
             if isPDF {
-                Rectangle().fill(theme.line).frame(height: 1)
-                Picker("PDF display", selection: $pdfShowsOriginal) {
-                    Text("Original pages").tag(true)
-                    Text("Reading view").tag(false)
+                section("PDF") {
+                    Picker("PDF display", selection: $pdfShowsOriginal) {
+                        Text("Original pages").tag(true)
+                        Text("Reading view").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .help("Show the PDF's original pages, or its extracted text with highlights")
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .help("Show the PDF's original pages, or its extracted text with highlights")
             }
         }
-        .padding(16)
-        .frame(width: 288)
+        .padding(20)
+        // Sheet (iPhone): fill the width so the controls read as a laid-out
+        // sheet rather than a small island stranded in a large surface.
+        // Popover (iPad): pin the bubble to a fixed width — `maxWidth` alone
+        // would let the popover hug the content's ideal width and collapse
+        // the Spacer-based rows.
+        .frame(width: isSheetPresentation ? nil : 320, alignment: .leading)
+        .frame(maxWidth: isSheetPresentation ? .infinity : nil, alignment: .leading)
         .background(theme.elevated)
+        #if os(iOS)
+        // Size the adapted sheet to the measured content height, so it fits
+        // exactly at any Dynamic Type size and never strands the controls in
+        // a half-empty screen. `.medium` is the pre-measurement fallback.
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
+            measuredHeight = $0
+        }
+        .presentationDetents(
+            measuredHeight > 0 ? [.height(measuredHeight)] : [.medium]
+        )
+        .presentationDragIndicator(.visible)
+        #endif
         .presentationBackground(theme.elevated)
+    }
+
+    /// A captioned group: a faint section label above its control row.
+    @ViewBuilder
+    private func section(
+        _ title: String, @ViewBuilder content: () -> some View
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.system(size: 11, weight: .medium))
+                .kerning(1.5)
+                .foregroundStyle(theme.faint)
+            content()
+        }
     }
 
     // MARK: - Font stepper (serif A / A with a hairline divider)

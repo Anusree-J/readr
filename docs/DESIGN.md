@@ -32,20 +32,33 @@ LiquidText, Yomu), and verified AppKit/PDFKit implementation patterns.
 - **No lock-in.** Files stay accessible, annotations export as Markdown,
   local-LLM path stays offline.
 
-## Visual system ("Paper & Ink" v2)
+## Visual system ("Marginalia")
 
-- **Accent**: warm amber `#DE9E36` (`Color(red: 0.87, green: 0.62, blue: 0.21)`)
-  — matches the app icon (open book + amber spark on warm ink). Asset catalog
-  `AccentColor` + `AppTheme.accent` must agree.
-- **Covers**: 2:3 jackets, radius 6, soft shadow; deterministic gradient + serif
-  title placeholder when no artwork. Hover: scale 1.04 + deeper shadow +
-  a subtle "Read" affordance (macOS).
-- **Reading themes**: Paper, Sepia, Night (existing palette) applied to the
-  full reader surface including chrome background.
-- **Typography**: serif (New York) for book text and reading-related headings;
-  system sans for chrome. Sizes 13–30pt, line spacing 0.45×.
-- **Highlight palette** (both light + night variants, alpha ~0.35/0.25):
-  yellow, green, blue, pink, purple. Note indicator uses the highlight color.
+Superseded "Paper & Ink v2" with the Claude Design handoff (scratch:
+ebook-reader-with-ai-margin-notes). `App/Design/Theme.swift` is the source of
+truth for every token; this section mirrors it.
+
+- **Accent (Iris)**: `#5B57C7` (`#938EE9` on dark paper), reserved for AI
+  moments only — the ✦ glyph, Ask affordances, citation chips, streaming
+  carets. Generic chrome never uses it. Asset catalog `AccentColor` +
+  `AppTheme.accent` must agree.
+- **Surfaces**: warm paper (`background` chrome, `paper` page, `elevated`
+  popovers) per reading theme — Paper, Sepia, Dark (raw values keep the v1
+  `paper`/`sepia`/`night` names so persisted selections survive). The theme
+  owns the full reader surface including chrome background and footer.
+- **Covers**: 2:3 jackets, radius 6, soft shadow; flat tinted placeholder
+  fields (title-hash-picked) with light-ink serif title + small-caps author.
+  Hover: scale 1.04 + deeper shadow + a subtle "Read" affordance (macOS).
+- **Typography**: serif (system serif/New York; Literata tracked in ROADMAP)
+  for book text and reading headings; system sans for chrome. Sizes 13–30pt,
+  line-height ~1.74 (lineSpacing 0.52×).
+- **Highlight palette ("muted literary")**: amber, sage, slate, clay (+
+  lavender kept renderable for legacy highlights, not offered for new ones).
+  Light/sepia paint opaque muted fields; dark uses alpha washes (~0.30) so
+  text stays luminous. Note indicator: a single underline in the marker's
+  base color (chosen over a superscript glyph — underlines never perturb
+  layout or stored character offsets).
+- **Hairlines**: ink at 14–17% opacity for borders, dividers, progress tracks.
 
 ## Information architecture
 
@@ -114,8 +127,8 @@ Toolbar (unifiedCompact, auto-hides in full screen):
   highlight too); Ask opens the Ask panel seeded with the selection.
 - Clicking an **existing highlight** re-opens the popover with: change color,
   Edit Note, Remove Highlight, Ask.
-- Highlights render in their color; a highlight with a note gets a small
-  superscript note marker at its end in the highlight color.
+- Highlights render in their color; a highlight with a note is underlined in
+  the marker's base color (see Visual system — offset-safe note indicator).
 - **PDFs (native mode)**: same popover on selection (PDFViewSelectionChanged +
   debounce). Highlights are stored in Readr's own store as page index +
   per-line page-space rects + quoted text + color + note (PDF file is never
