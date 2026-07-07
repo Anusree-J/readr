@@ -288,28 +288,29 @@ final class ReadrAppUITests: XCTestCase {
             }
         }
 
-        // j. Back out to the sidebar, visit the All Books grid.
-        var backButton = app.navigationBars.buttons.firstMatch
-        if backButton.waitForExistence(timeout: 3) { backButton.tap() }
-        let allBooks = app.buttons["sidebar.allBooks"].firstMatch
-        if !allBooks.waitForExistence(timeout: 3) {
-            // Compact width may need one more pop to reach the sidebar list.
-            backButton = app.navigationBars.buttons.firstMatch
-            if backButton.waitForExistence(timeout: 2) { backButton.tap() }
-        }
+        // j. Library grid + settings from a fresh launch — chaining back-pops
+        // through whatever screen the walk ended on proved flaky (these two
+        // shots never appeared in published galleries). A relaunch lands on
+        // Home deterministically; its back button is labeled "Readr".
+        app.terminate()
+        let app2 = launchSeeded()
+        _ = app2.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 10)
+        let toSidebar = app2.buttons["Readr"].firstMatch
+        if toSidebar.waitForExistence(timeout: 3) { toSidebar.tap() }
+        let allBooks = app2.buttons["sidebar.allBooks"].firstMatch
         if allBooks.waitForExistence(timeout: 3) {
             allBooks.tap()
-            _ = app.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 3)
-            snap(app, "12-library-grid")
+            _ = app2.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 3)
+            snap(app2, "12-library-grid")
         }
 
         // k. AI providers settings sheet.
-        let settingsButton = button(app, id: "library.settings", label: "AI providers")
+        let settingsButton = button(app2, id: "library.settings", label: "AI providers")
         if settingsButton.waitForExistence(timeout: 5) {
             settingsButton.tap()
-            _ = app.navigationBars["AI Providers"].waitForExistence(timeout: 3)
-            snap(app, "13-settings")
-            let done = app.buttons["Done"].firstMatch
+            _ = app2.navigationBars["AI Providers"].waitForExistence(timeout: 3)
+            snap(app2, "13-settings")
+            let done = app2.buttons["Done"].firstMatch
             if done.waitForExistence(timeout: 3) { done.tap() }
         }
     }
