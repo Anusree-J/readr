@@ -288,30 +288,44 @@ final class ReadrAppUITests: XCTestCase {
             }
         }
 
-        // j. Library grid + settings from a fresh launch — chaining back-pops
-        // through whatever screen the walk ended on proved flaky (these two
-        // shots never appeared in published galleries). A relaunch lands on
-        // Home deterministically; its back button is labeled "Readr".
+        // j. Settings, sidebar, and library grid from a fresh launch —
+        // chaining back-pops through the end-of-walk screen proved flaky
+        // (these shots never appeared in published galleries). A relaunch
+        // lands on Home deterministically.
         app.terminate()
         let app2 = launchSeeded()
         _ = app2.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 10)
-        let toSidebar = app2.buttons["Readr"].firstMatch
-        if toSidebar.waitForExistence(timeout: 3) { toSidebar.tap() }
-        let allBooks = app2.buttons["sidebar.allBooks"].firstMatch
-        if allBooks.waitForExistence(timeout: 3) {
-            allBooks.tap()
-            _ = app2.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 3)
-            snap(app2, "12-library-grid")
-        }
 
-        // k. AI providers settings sheet.
+        // The AI-providers gear lives on Home's toolbar — capture before
+        // navigating away (the sidebar root doesn't carry it).
         let settingsButton = button(app2, id: "library.settings", label: "AI providers")
-        if settingsButton.waitForExistence(timeout: 5) {
+        if settingsButton.waitForExistence(timeout: 5), settingsButton.isHittable {
             settingsButton.tap()
             _ = app2.navigationBars["AI Providers"].waitForExistence(timeout: 3)
-            snap(app2, "13-settings")
+            snap(app2, "12-settings")
             let done = app2.buttons["Done"].firstMatch
             if done.waitForExistence(timeout: 3) { done.tap() }
+        }
+
+        // Home's back button is labeled "Readr" (the sidebar root's title).
+        let toSidebar = app2.buttons["Readr"].firstMatch
+        if toSidebar.waitForExistence(timeout: 3) {
+            toSidebar.tap()
+            _ = app2.staticTexts["All Books"].firstMatch.waitForExistence(timeout: 3)
+            snap(app2, "13-sidebar")
+        }
+
+        // iOS sidebar rows are List(selection:) Labels — they surface to
+        // XCUITest as cells, NOT buttons (why the old buttons-based lookup
+        // never matched). Fall back to the visible label text.
+        let allBooksCell = app2.cells["sidebar.allBooks"].firstMatch
+        let allBooks = allBooksCell.exists
+            ? allBooksCell
+            : app2.staticTexts["All Books"].firstMatch
+        if allBooks.waitForExistence(timeout: 3), allBooks.isHittable {
+            allBooks.tap()
+            _ = app2.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 3)
+            snap(app2, "14-library-grid")
         }
     }
 }
