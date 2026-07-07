@@ -204,14 +204,20 @@ final class AppModel: ObservableObject {
         }
         context.closePDF()
 
-        try? store.add(Book(
+        let book = Book(
             metadata: BookMetadata(title: "Field Notes", authors: ["R. Calder"]),
             chapters: [
                 Chapter(title: "Field Notes", order: 0, text: pageOne + "\n\n" + pageTwo)
             ],
             estimatedTokenCount: 80,
             sourceFilename: "field-notes.pdf"
-        ))
+        )
+        try? store.add(book)
+        // Freshest import: leads Recently Added (a PDF card on Home) and
+        // takes the grid's top slot, where the walk can reach it without
+        // scrolling — stateless books sort to the end of `recentlyAdded`,
+        // which would push the PDF below the fold on a phone.
+        try? store.saveBookState(BookState(addedAt: Date()), for: book.id)
     }
 
     /// Character-offset range of `phrase` in `text`. Highlights address
