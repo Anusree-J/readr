@@ -402,7 +402,10 @@ struct PagedChapterView: View {
                 // anchor the parent persists. Cached per pagination; scanning
                 // chapter.text here would run on every body evaluation.
                 let minutes = minutesLeft(fromPage: start)
-                Text(minutes > 0 ? "\(pageText) · ~\(minutes) min left in chapter" : pageText)
+                // Compact drops "in chapter" — the full phrase truncates to
+                // "~1 min left in ch…" beside the progress track on a phone.
+                let suffix = isCompact ? "min left" : "min left in chapter"
+                Text(minutes > 0 ? "\(pageText) · ~\(minutes) \(suffix)" : pageText)
                     .font(.system(size: 11))
                     .foregroundStyle(style.theme.muted)
                     .monospacedDigit()

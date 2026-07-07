@@ -192,12 +192,24 @@ final class ReadrAppUITests: XCTestCase {
                 createArticle.tap()
                 _ = app.staticTexts["No AI provider connected"].waitForExistence(timeout: 3)
                 snap(app, "07-article-studio")
-                let done = app.buttons["Done"].firstMatch
+                // Scoped to the studio's nav bar: the notes panel behind it
+                // has its own Done now.
+                let done = app.navigationBars.buttons["Done"].firstMatch
                 if done.waitForExistence(timeout: 2) { done.tap() }
             }
-            // Close the notes panel (sheet on iPhone).
-            let done = app.buttons["Done"].firstMatch
-            if done.waitForExistence(timeout: 2) { done.tap() }
+            // Close the notes panel via its own Done, then verify the reader
+            // is interactive again — run #56 showed a lingering sheet turns
+            // every later capture into the same stuck-sheet image. Fall back
+            // to toggling the toolbar button.
+            let closeNotes = app.buttons["notes.done"].firstMatch
+            if closeNotes.waitForExistence(timeout: 2), closeNotes.isHittable {
+                closeNotes.tap()
+            }
+            let tocProbe = button(app, id: "reader.toc", label: "Table of contents")
+            if !tocProbe.waitForExistence(timeout: 2) || !tocProbe.isHittable {
+                notesButton.tap() // toggle the inspector closed
+                _ = tocProbe.waitForExistence(timeout: 2)
+            }
         }
 
         // f. Table of contents: open, capture, jump to Chapter Two.

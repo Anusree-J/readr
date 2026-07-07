@@ -149,10 +149,19 @@ struct ReaderView: View {
                             where: { $0.id == highlight.chapterID }
                         ) else { return }
                         jump(toChapter: index, offset: highlight.range.lowerBound)
+                        // iPhone: the inspector is a covering sheet — close it
+                        // so the reader sees the jump land. iPad/macOS side
+                        // columns stay open beside the page.
+                        #if os(iOS)
+                        if UIDevice.current.userInterfaceIdiom == .phone {
+                            showNotes = false
+                        }
+                        #endif
                     },
                     // Jumping to a PDF page needs a page binding into
                     // PDFReaderView; v2 ships without one.
-                    onJumpPDF: nil
+                    onJumpPDF: nil,
+                    onClose: { showNotes = false }
                 )
                 .inspectorColumnWidth(min: 280, ideal: 340, max: 480)
             }
