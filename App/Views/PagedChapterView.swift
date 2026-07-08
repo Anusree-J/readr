@@ -108,10 +108,17 @@ struct PagedChapterView: View {
     }
     /// Interior page margins. Regular widths get generous, literary margins
     /// (the paper fills the window, so the text can breathe); compact stays
-    /// close to the pre-full-bleed insets so a phone column isn't starved.
+    /// tighter so a phone column isn't starved. Invariant: the leading/trailing
+    /// inset is >= `arrowStripWidth` on BOTH size classes, so the full-height
+    /// edge strip lands entirely in the margin and never overlaps the text
+    /// column — otherwise the strip's button swallows selection-handle drags
+    /// and long-press-to-annotate over the first/last glyphs of every line
+    /// (the strips z-order above the column and the paper fills the window, so
+    /// on a phone the column reaches the window edge). Regular already matches
+    /// (56 == 56); compact matches at 40.
     private var pageInsets: EdgeInsets {
         isCompact
-            ? EdgeInsets(top: 28, leading: 22, bottom: 22, trailing: 22)
+            ? EdgeInsets(top: 28, leading: 40, bottom: 22, trailing: 40)
             : EdgeInsets(top: 44, leading: 56, bottom: 40, trailing: 56)
     }
     /// Reserved band at the bottom for the muted page label, kept clear of the
