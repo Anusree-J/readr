@@ -61,6 +61,23 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.readr.uitests
         SWIFT_VERSION: "5.9"
 
+  # macOS-only visual coverage: app-hosted unit tests that render the key
+  # SwiftUI surfaces offscreen and attach PNGs (published to ci-screenshots
+  # with m-prefixed names). Deterministic — no XCUITest automation session.
+  ReadrSnapshotTests:
+    type: bundle.unit-test
+    supportedDestinations: [macOS]
+    sources:
+      - SnapshotTests
+    dependencies:
+      - target: Readr
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.readr.snapshottests
+        SWIFT_VERSION: "5.9"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Readr.app/Contents/MacOS/Readr"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
 schemes:
   Readr:
     build:
@@ -70,3 +87,14 @@ schemes:
     test:
       targets:
         - ReadrAppUITests
+
+  # Separate scheme so the iOS simulator run never plans the macOS-only
+  # snapshot bundle, and vice versa.
+  ReadrSnapshots:
+    build:
+      targets:
+        Readr: all
+        ReadrSnapshotTests: [test]
+    test:
+      targets:
+        - ReadrSnapshotTests

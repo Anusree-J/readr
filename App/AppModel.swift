@@ -97,6 +97,18 @@ final class AppModel: ObservableObject {
         return [sample, voyage, letters]
     }()
 
+    /// The `-uiTestSeed` world as a directly constructible model, for tests
+    /// that can't pass launch arguments (the macOS snapshot suite renders
+    /// views offscreen inside the app-hosted unit bundle). Same fixtures the
+    /// UI tests and CI screenshots see.
+    static func uiTestSeededModel() -> AppModel {
+        let seeded = InMemoryLibraryStore()
+        for book in sampleBooks { try? seeded.add(book) }
+        seedFixtureState(into: seeded)
+        seedFixturePDF(into: seeded)
+        return AppModel(store: seeded)
+    }
+
     /// Layers lifecycle state and annotations over `sampleBooks` so seeded
     /// runs exercise the whole v2 surface: Home gets a Continue Reading card
     /// (saved position + `lastOpenedAt` on "Sample Book"), the Finished shelf
