@@ -79,9 +79,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   expected behaviour, as testable acceptance criteria.
 - [docs/DEVELOPMENT-PLAN.md](docs/DEVELOPMENT-PLAN.md) — test-first milestone
   plan (tests written before code, verified against journeys after).
-- [docs/AUTH.md](docs/AUTH.md) — how BYO keys, subscription OAuth (designed,
-  currently disabled pending end-to-end verification), and
-  local models work (OAuth+PKCE, modeled on Muesli).
+- [docs/AUTH.md](docs/AUTH.md) — how BYO keys and local models work, plus the
+  subscription-OAuth design (currently disabled pending end-to-end
+  verification).
 - [docs/CONTEXT-STRATEGY.md](docs/CONTEXT-STRATEGY.md) — the adaptive
   whole-book-vs-retrieval decision.
 - [docs/ROADMAP.md](docs/ROADMAP.md) — milestone checklist.
