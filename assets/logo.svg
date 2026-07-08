@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Readr logo — open book + spark. Deep indigo around the Iris accent (#5B57C7), paper-cream pages, amber spark. -->
+  <!-- Readr logo — open book + rising sparks. Deep indigo around the Iris accent (#5B57C7), paper-cream pages, amber sparks. -->
+  <title>Readr</title>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#26225C"/>
@@ -19,22 +20,20 @@
   <rect width="1024" height="1024" rx="180" fill="url(#glow)"/>
 
   <!-- fanned under-pages (iris accents) -->
-  <g>
-    <path fill="#5B57C7" opacity="0.55" d="M512 512
-      C 452 472, 382 460, 296 476
-      L 296 682
-      C 382 666, 452 678, 512 716
-      C 572 678, 642 666, 728 682
-      L 728 476
-      C 642 460, 572 472, 512 512 Z"/>
-    <path fill="#938EE9" opacity="0.9" d="M512 492
-      C 452 452, 382 440, 296 456
-      L 296 662
-      C 382 646, 452 658, 512 696
-      C 572 658, 642 646, 728 662
-      L 728 456
-      C 642 440, 572 452, 512 492 Z"/>
-  </g>
+  <path fill="#5B57C7" opacity="0.55" d="M512 512
+    C 452 472, 382 460, 296 476
+    L 296 682
+    C 382 666, 452 678, 512 716
+    C 572 678, 642 666, 728 682
+    L 728 476
+    C 642 460, 572 472, 512 512 Z"/>
+  <path fill="#938EE9" opacity="0.9" d="M512 492
+    C 452 452, 382 440, 296 456
+    L 296 662
+    C 382 646, 452 658, 512 696
+    C 572 658, 642 646, 728 662
+    L 728 456
+    C 642 440, 572 452, 512 492 Z"/>
 
   <!-- pages -->
   <path fill="url(#page)" d="M506 470
