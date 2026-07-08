@@ -44,6 +44,18 @@ jobs:
           -destination 'generic/platform=macOS'
           -skipPackagePluginValidation
           CODE_SIGNING_ALLOWED=NO
+      # Offscreen SwiftUI renders of the macOS-only surfaces (m-prefixed
+      # PNGs). App-hosted unit tests, not XCUITest — deterministic on runners.
+      - name: Snapshot tests (macOS)
+        run: >
+          set -o pipefail &&
+          xcodebuild test
+          -project Readr.xcodeproj
+          -scheme ReadrSnapshots
+          -destination 'platform=macOS'
+          -skipPackagePluginValidation
+          -resultBundlePath MacResults
+          CODE_SIGNING_ALLOWED=NO
       - name: UI tests (iOS Simulator)
         run: >
           set -o pipefail &&
@@ -56,9 +68,10 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
       - name: Extract screenshots
         if: always()
-        run: >
-          brew install chargepoint/xcparse/xcparse &&
-          xcparse screenshots TestResults.xcresult shots &&
+        run: |
+          brew install chargepoint/xcparse/xcparse
+          xcparse screenshots TestResults.xcresult shots || true
+          xcparse attachments MacResults.xcresult shots --uti public.png || true
           ls -R shots || true
       - name: Publish screenshots
         if: always()
