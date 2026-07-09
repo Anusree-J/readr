@@ -9,27 +9,25 @@ Outputs (written to OUT, this directory by default):
 Expected inputs:
   SHOTS  directory of raw app screenshots (override with $READR_SHOTS):
            NN-<name>*.png   iPhone screenshots, 1178x2556 (iPhone 15 Pro sim)
-           mNN-<name>*.png  macOS screenshots (m01/m03: 900x700, m08: 1100x760,
-                            m05: annotation popover bars, m07: library grid)
+           mNN-<name>*.png  macOS screenshots (m01/m03: 900x700, m02: 1200x760,
+                            m08: 1100x760, m05: annotation popover bars,
+                            m07: library grid)
          Shots are looked up by their numeric prefix, e.g. shot("04").
   ICON   the 1024px app icon from the repo (override with $READR_ICON).
 
 Re-run:  python3 generate.py          (needs Pillow >= 10; DejaVu fonts,
                                        present by default on Debian/Ubuntu)
 
-NOTE on the macOS shots: m01/m02/m03/m08 were captured with a text-layout bug
-that clips lines mid-word at the page's right edge. The compositions below
-hide the clipped edge (phone overlap on 01/06, off-canvas bleed on 04) and
-slide 05 uses iPhone shots instead of the buggy m02 spread. Once the fix
-lands and fresh shots exist, the mac windows can be shown un-cropped again
-(see README.md).
+The shots are the post-redesign (Apple-Books-style, full-bleed paper) captures:
+the paged reader fills the window with a bottom-center page label and no
+clipping, so every mac window is shown un-cropped.
 """
 import os
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 SHOTS = os.environ.get(
     "READR_SHOTS",
-    "/tmp/claude-0/-home-user-readr/fd3d7334-8854-59f0-a6c5-10fdb5ddac1b/scratchpad/shots")
+    "/tmp/claude-0/-home-user-readr/fd3d7334-8854-59f0-a6c5-10fdb5ddac1b/scratchpad/shots2")
 OUT = os.environ.get("READR_OUT", os.path.dirname(os.path.abspath(__file__)))
 ICON = os.environ.get("READR_ICON",
                       "/home/user/readr/App/Assets.xcassets/AppIcon.appiconset/ios-1024.png")
@@ -239,12 +237,12 @@ def save(canvas, name):
 # ---------------------------------------------------------------- slide 1: hero
 def hero():
     c = slide_bg(hero=True)
-    # right cluster: mac window behind, phone in front.
-    # The phone deliberately overlaps the mac window's right side so the
-    # clipped page edge in m01 (layout bug, see module docstring) stays hidden.
+    # right cluster: mac window and phone side by side — the reader is now
+    # full-bleed paper (text right up to the page margins), so nothing may
+    # overlap the mac window without appearing to cut lines off.
     win = shot("m01")
-    place_window(c, win, 560, (575, 185), title="Sample Book — Readr")
-    place_phone(c, shot("06"), 540, (995, 145))
+    place_window(c, win, 470, (560, 215), title="Sample Book — Readr")
+    place_phone(c, shot("06"), 460, (1040, 190))
     # left text
     icon = Image.open(ICON).convert("RGB").resize((132, 132), Image.LANCZOS)
     icon = rounded(icon, 30)
@@ -306,11 +304,9 @@ def article():
 def annotate():
     c = slide_bg()
     brand_tag(c)
-    # m08 has the clipped-right-edge layout bug, so the window is oversized and
-    # bleeds off the right/bottom canvas edges: the canvas cuts the text column
-    # mid-body (an intentional crop) before the ragged edge/scrollbar appear.
-    # y=94 puts the bottom cut in the gap after the fourth paragraph.
-    place_window(c, shot("m08"), 930, (540, 94), title="Sample Book")
+    # the full-bleed m08 scroll capture is clean, so the window sits fully on
+    # canvas, un-cropped
+    place_window(c, shot("m08"), 720, (530, 105), title="Sample Book")
     # m05 is two white popover bars on a black backdrop — extract each bar
     m05 = shot("m05")
     gray = m05.convert("L").point(lambda p: 255 if p > 60 else 0)
@@ -318,7 +314,7 @@ def annotate():
     bot_bb = gray.crop((0, 90, m05.width, m05.height)).getbbox()
     bars = [m05.crop((top_bb[0], top_bb[1], top_bb[2], top_bb[3])),
             m05.crop((bot_bb[0], bot_bb[1] + 90, bot_bb[2], bot_bb[3] + 90))]
-    positions = [(620, 528), (700, 642)]
+    positions = [(600, 525), (680, 640)]
     for bar, pos in zip(bars, positions):
         s = 1.55
         bar = bar.resize((int(bar.width * s), int(bar.height * s)), Image.LANCZOS)
@@ -339,27 +335,33 @@ def annotate():
 
 # ---------------------------------------------------------------- slide 5: pages
 def pages():
-    # iPhone shots only: the m02 two-page-spread mac shot shows the clipped
-    # page-edge bug too clearly. Three phones = the three themes in the subline.
+    # The macOS sepia two-page spread (m02) is the centerpiece, flanked by
+    # iPhone scroll (paper) and single-page (dark) shots — one item per mode.
     c = slide_bg()
     brand_tag(c)
     text_block(c, 85, 46,
                "Three ways to turn a page",
                "Scroll, single page, or a two-page spread — in Paper, Sepia & Dark.",
                1100, hsize=52, ssize=27, center=True)
-    phones = [("02", 460, 232, "Paper"),   # paper theme, scroll mode
-              ("04", 500, 196, "Sepia"),   # sepia theme, paged mode
-              ("11", 460, 232, "Dark")]    # dark theme, paged mode
-    gap = 58
-    sizes = [phone_frame(shot(n), h).size for n, h, _, _ in phones]
-    total = sum(s[0] for s in sizes) + gap * (len(phones) - 1)
-    x = (W - total) // 2
     d = ImageDraw.Draw(c)
     cf = sans_b(21)
-    for (n, h, y, label), (fw, fh) in zip(phones, sizes):
-        place_phone(c, shot(n), h, (x, y))
+    gap = 46
+    win = mac_window(shot("m02"), 620, title="Sample Book")
+    items = [("phone", "02", 400, 228, "Scroll · Paper"),
+             ("win", None, None, 210, "Two-page spread · Sepia"),
+             ("phone", "11", 400, 228, "Single page · Dark")]
+    sizes = [phone_frame(shot(n), h).size if kind == "phone" else win.size
+             for kind, n, h, _, _ in items]
+    total = sum(s[0] for s in sizes) + gap * (len(items) - 1)
+    x = (W - total) // 2
+    for (kind, n, h, y, label), (fw, fh) in zip(items, sizes):
+        if kind == "phone":
+            place_phone(c, shot(n), h, (x, y))
+        else:
+            paste_shadow(c, win.size, (x, y), 14, blur=24, alpha=75)
+            c.alpha_composite(win, (x, y))
         lw = d.textlength(label, font=cf)
-        d.text((x + (fw - lw) / 2, 722), label, font=cf, fill=(43, 38, 32, 170))
+        d.text((x + (fw - lw) / 2, 672), label, font=cf, fill=(43, 38, 32, 170))
         x += fw + gap
     save(c, "05-three-ways-to-turn-a-page.png")
 
@@ -372,10 +374,10 @@ def dark():
                "Dark mode done properly",
                "Highlights become alpha washes so the text stays luminous — Mac and iPhone.",
                1100, hsize=52, ssize=27, center=True, dark=True)
-    # The phone overlaps the mac window's right side so the clipped page edge
-    # in m03 (layout bug, see module docstring) stays hidden behind the bezel.
-    place_window(c, shot("m03"), 620, (230, 216), dark=True, title="Sample Book", alpha=160)
-    place_phone(c, shot("11"), 540, (780, 188), alpha=160)
+    # Side by side, no overlap — the full-bleed m03 capture is clean edge to
+    # edge, so the whole mac page stays visible.
+    place_window(c, shot("m03"), 620, (167, 216), dark=True, title="Sample Book", alpha=160)
+    place_phone(c, shot("11"), 540, (837, 188), alpha=160)
     save(c, "06-dark-mode.png")
 
 
