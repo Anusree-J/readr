@@ -56,6 +56,35 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        # Files-app / Finder registration: Readr shows up in "Open with" and
+        # share sheets for exactly the formats the in-app importer accepts —
+        # keep this list in lockstep with LibraryImport.types
+        # (App/Views/Library/LibrarySupport.swift). LSHandlerRank is Alternate
+        # throughout: Readr reads these system/standard UTIs but owns none of
+        # them.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: EPUB Publication
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - org.idpf.epub-container
+          - CFBundleTypeName: PDF Document
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.adobe.pdf
+          - CFBundleTypeName: Plain Text
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.plain-text
+          - CFBundleTypeName: Markdown Document
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - net.daringfireball.markdown
+        # Open-in-place is safe: AppModel.importBook takes security-scoped
+        # access and copies the file into the app's Books directory — the
+        # original is never held open or mutated.
+        LSSupportsOpeningDocumentsInPlace: true
+        # Readr has its own library UI; it is not a document-browser app.
+        UISupportsDocumentBrowser: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.readr.app

@@ -15,6 +15,19 @@ final class SettingsModel: ObservableObject {
 
     let kinds: [ProviderInfo.Kind] = [.anthropic, .openAI, .local]
 
+    /// The provider rows the settings screen renders. On iOS the Local row is
+    /// hidden: LocalLLMProvider defaults to loopback Ollama
+    /// (http://127.0.0.1:11434), and nothing listens on a phone's loopback —
+    /// the row would be a dead end. macOS keeps it; pointing at a LAN-hosted
+    /// Ollama from iOS is a tracked fast-follow.
+    var displayedKinds: [ProviderInfo.Kind] {
+        #if os(iOS)
+        return kinds.filter { $0 != .local }
+        #else
+        return kinds
+        #endif
+    }
+
     init(manager: ProviderManager, store: any CredentialStore) {
         self.manager = manager
         self.store = store
@@ -87,16 +100,19 @@ final class SettingsModel: ObservableObject {
 
     static func oauthConfig(for kind: ProviderInfo.Kind) -> OAuthProviderConfig? {
         switch kind {
-        // OpenAI subscription OAuth is hidden until it's verified end-to-end:
-        // the flow borrows the Codex CLI's client registration and its tokens
-        // are not expected to authenticate against api.openai.com, and no
-        // token-refresh path is wired up yet (`OAuthClient.refresh` has no
-        // call sites). On iOS the flow additionally needs an in-process
-        // browser (SFSafariViewController): opening external Safari suspends
-        // the app, and the suspended loopback server can't answer the
-        // 127.0.0.1 redirect. Re-enable by returning `.openAI` once all are
-        // fixed — the sign-in button reappears automatically (see
-        // `supportsOAuth`), and flip testProviderSettingsOffersNoOAuthSignIn.
+        // OpenAI subscription OAuth stays hidden until it's verified
+        // end-to-end: the flow borrows the Codex CLI's client registration
+        // and its tokens are not expected to authenticate against
+        // api.openai.com, and no token-refresh path is wired up yet
+        // (`OAuthClient.refresh` has no call sites). The iOS in-process
+        // browser plumbing IS now implemented — OAuthCoordinator presents an
+        // SFSafariViewController so the app stays foregrounded and the
+        // loopback server can answer the 127.0.0.1:1455 redirect — but it
+        // can't be exercised without a signed build on a physical device
+        // (developer account not yet verified). Re-enable by returning
+        // `.openAI` once the whole flow is verified on-device — the sign-in
+        // button reappears automatically (see `supportsOAuth`), and flip
+        // testProviderSettingsOffersNoOAuthSignIn to match.
         case .openAI: return nil
         // Anthropic subscription OAuth is intentionally NOT offered: Anthropic's
         // Consumer Terms prohibit using Free/Pro/Max OAuth tokens in third-party

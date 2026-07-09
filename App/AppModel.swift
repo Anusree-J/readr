@@ -55,6 +55,19 @@ final class AppModel: ObservableObject {
                 statesByBook[book.id] = state
             }
         }
+
+        // `-uiTestOpenURL <path>`: deterministic stand-in for the Files-app /
+        // Finder open-in flow, mirroring `-uiTestSeed` above. XCUITest can't
+        // drive the system Files UI, so a UI test passes a fixture path and we
+        // import it through the exact same `importBook` path `.onOpenURL`
+        // uses. Xcode maps `-key value` launch arguments into
+        // `UserDefaults.standard`, so the path reads back via the defaults
+        // key; absent the flag this is a no-op.
+        if ProcessInfo.processInfo.arguments.contains("-uiTestOpenURL"),
+           let path = UserDefaults.standard.string(forKey: "uiTestOpenURL") {
+            let url = URL(fileURLWithPath: path)
+            Task { await self.importBook(at: url) }
+        }
     }
 
     private static func makeCredentialStore() -> any CredentialStore {
