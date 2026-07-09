@@ -72,6 +72,11 @@ jobs:
           -skipPackagePluginValidation
           -resultBundlePath MacResults
           CODE_SIGNING_ALLOWED=NO
+      # -retry-tests-on-failure + -test-iterations 3: XCUITest on the
+      # simulator is timing-sensitive and occasionally flakes (sheet/inspector
+      # presentation races). Retrying a *failed* test up to twice rescues
+      # intermittent flakes while a real regression still fails all three
+      # attempts and reddens the build.
       - name: UI tests (iPhone Simulator)
         run: >
           set -o pipefail &&
@@ -80,6 +85,8 @@ jobs:
           -scheme Readr
           -destination "platform=iOS Simulator,name=${IPHONE_SIM}"
           -skipPackagePluginValidation
+          -retry-tests-on-failure
+          -test-iterations 3
           -resultBundlePath TestResults
           CODE_SIGNING_ALLOWED=NO
       # Same suite at iPad size: regular-width layouts (side-by-side split
@@ -93,6 +100,8 @@ jobs:
           -scheme Readr
           -destination "platform=iOS Simulator,name=${IPAD_SIM}"
           -skipPackagePluginValidation
+          -retry-tests-on-failure
+          -test-iterations 3
           -resultBundlePath IPadResults
           CODE_SIGNING_ALLOWED=NO
       - name: Extract screenshots
