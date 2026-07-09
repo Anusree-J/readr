@@ -45,11 +45,34 @@ jobs:
       VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
       HAS_ASC_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 != '' && 'true' || 'false' }}
     steps:
+      # Three outcomes: all iOS secrets present → proceed; none present →
+      # warn + skip (a macOS-only v* release via release.yml is unaffected);
+      # partially present → fail loudly rather than die deep inside xcodebuild
+      # with an opaque signing error. APPLE_TEAM_ID is shared with the macOS
+      # lane, so "none configured" is judged on the three iOS-specific secrets.
       - name: Check secrets
-        if: env.HAS_ASC_KEY == 'false'
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          echo "::warning::APP_STORE_CONNECT_* secrets are not configured; skipping TestFlight upload."
-          echo "See the header of this workflow for the four required secrets."
+          n=0
+          [ -n "$KEY_ID" ] && n=$((n+1))
+          [ -n "$ISSUER_ID" ] && n=$((n+1))
+          [ -n "$P8" ] && n=$((n+1))
+          if [ "$n" -eq 0 ]; then
+            echo "::warning::No App Store Connect secrets configured; skipping the iOS TestFlight upload (a macOS-only v* release is unaffected)."
+            exit 0
+          fi
+          if [ "$n" -lt 3 ]; then
+            echo "::error::App Store Connect secrets are partially configured. Set all of APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_API_KEY_P8 (and APPLE_TEAM_ID)."
+            exit 1
+          fi
+          if [ -z "$TEAM_ID" ]; then
+            echo "::error::APP_STORE_CONNECT_* are set but APPLE_TEAM_ID is missing — required for signing."
+            exit 1
+          fi
       - uses: actions/checkout@v4
         if: env.HAS_ASC_KEY == 'true'
       - name: Install XcodeGen
@@ -120,8 +143,10 @@ jobs:
         run: rm -f "$RUNNER_TEMP/AuthKey.p8"
       # The archive (with dSYMs) is the debugging artifact for this upload;
       # keep it for a while in case a beta crash needs symbolication.
+      # always(): keep the dSYM-bearing archive even if the upload step failed —
+      # it's exactly what you need to debug a failed upload or a beta crash.
       - name: Upload archive artifact
-        if: env.HAS_ASC_KEY == 'true'
+        if: always() && env.HAS_ASC_KEY == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: Readr-iOS-${{ env.VERSION }}.xcarchive

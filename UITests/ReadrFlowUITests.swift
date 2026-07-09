@@ -320,20 +320,26 @@ final class ReadrFlowUITests: XCTestCase {
         let notes = button(app, id: "reader.notes", label: "Highlights")
         XCTAssertTrue(notes.waitForExistence(timeout: 5))
         notes.tap()
-        // On iPhone the center long-press lands on plain text → a 4th
-        // highlight is created and asserted. On the wider iPad column the same
-        // press can land on a seeded span (→ recolor, no new highlight) or the
-        // synthesized selection doesn't commit, so the count stays at 3. That's
-        // an XCUITest-selection limitation, not a product bug (HighlightService
-        // is unit-tested; the pipeline is asserted on the iPhone lane), so skip
-        // rather than fail when the 4th annotation didn't materialize.
+        // On iPhone the center long-press reliably lands on plain text → a 4th
+        // highlight is created, so ASSERT it (a real pipeline regression fails
+        // red here). On the wider iPad column the same press can land on a
+        // seeded span (→ recolor, no new highlight) or the synthesized
+        // selection doesn't commit, so the count stays at 3 — an
+        // XCUITest-selection limitation, not a product bug — so skip there.
         let created = app.staticTexts["4 annotations"].firstMatch.waitForExistence(timeout: 5)
-        try XCTSkipUnless(
-            created,
-            "Selection gesture didn't add a 4th annotation on this simulator "
-                + "(press hit a seeded span or selection didn't commit); the "
-                + "highlight-from-selection pipeline is asserted on the iPhone lane."
-        )
+        if isPad {
+            try XCTSkipUnless(
+                created,
+                "Selection gesture didn't add a 4th annotation on the iPad "
+                    + "simulator (press hit a seeded span or selection didn't "
+                    + "commit); the pipeline is asserted on the iPhone lane."
+            )
+        } else {
+            XCTAssertTrue(
+                created,
+                "Highlighting a selection should add a 4th annotation (3 seeded + 1)"
+            )
+        }
     }
 
     // MARK: - `-uiTestOpenURL` import (Lane A contract)
@@ -508,19 +514,24 @@ final class ReadrFlowUITests: XCTestCase {
             advanced = changed.waitForExistence(timeout: 4)
                 || app.staticTexts["Chapter Two"].firstMatch.exists
         }
-        // When the synthesized hardware key IS delivered (iPhone sim) this
-        // asserts Lane B's .onKeyPress turns the page. Some CI simulators
-        // (seen on iPad) don't route synthetic hardware-keyboard events to the
-        // focused SwiftUI surface at all — indistinguishable here from a real
-        // regression, and not something a device would hit — so skip rather
-        // than flake red. The wiring itself is compile-checked and the iPhone
-        // lane exercises it.
-        try XCTSkipUnless(
-            advanced,
-            "Hardware-keyboard key events weren't delivered to the paged reader "
-                + "in this simulator (label stayed '\(before)'); skipping the "
-                + "arrow-key page-turn assertion."
-        )
+        // The iPhone sim delivers the synthesized key, so ASSERT Lane B's
+        // .onKeyPress turns the page (a real regression fails red here). The
+        // iPad sim doesn't route synthetic hardware-keyboard events to the
+        // focused SwiftUI surface — indistinguishable from a regression and not
+        // something a device hits — so skip there rather than flake red.
+        if isPad {
+            try XCTSkipUnless(
+                advanced,
+                "Hardware-keyboard key events weren't delivered to the paged "
+                    + "reader on the iPad simulator (label stayed '\(before)')."
+            )
+        } else {
+            XCTAssertTrue(
+                advanced,
+                "Right arrow should turn the page (Lane B's .onKeyPress) — "
+                    + "label stayed '\(before)'"
+            )
+        }
 
         selectLayout(app, "Scroll")
     }
