@@ -54,7 +54,7 @@ struct AnnotationMenuView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.inkColor)
-            .help(mode.hasNote ? "Edit note" : "Add a note")
+            .help(mode.hasNote ? "Edit note" : "Add a note (⇧⌘M)")
             .accessibilityLabel(mode.hasNote ? "Edit Note" : "Note")
             .accessibilityIdentifier("annotation.note")
 
@@ -64,7 +64,7 @@ struct AnnotationMenuView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.iris)
-            .help("Ask the book about this passage")
+            .help("Ask the book about this passage (⇧⌘A)")
             .accessibilityLabel("Ask")
             .accessibilityIdentifier("annotation.ask")
 
@@ -101,7 +101,7 @@ struct AnnotationMenuView: View {
             .frame(width: 25, height: 25)
         }
         .buttonStyle(.plain)
-        .help("Highlight \(color.displayName)")
+        .help("Highlight \(color.displayName) (⇧⌘H uses the last-used color)")
         .accessibilityLabel("Highlight \(color.displayName)")
         .accessibilityIdentifier("annotation.color.\(color.rawValue)")
     }

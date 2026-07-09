@@ -24,6 +24,11 @@ struct ReaderView: View {
     @State private var pagedAnchor = 0
     @State private var didRestorePosition = false
     @State private var askSelection: Selection?
+    /// The committed text selection in chapter coordinates, reported by the
+    /// reading surfaces. Drives the selection-dependent keyboard shortcuts
+    /// (⇧⌘H highlight, ⇧⌘M note, and the selection-aware ⇧⌘A ask) — the
+    /// selection itself lives inside the platform text views.
+    @State private var currentSelection: Range<Int>?
     @State private var showAsk = false
     @State private var showNotes = false
     @State private var showTOC = false
@@ -114,6 +119,7 @@ struct ReaderView: View {
             #endif
             .toolbar { toolbarContent }
             .background(hiddenFontShortcuts)
+            .background(hiddenAnnotationShortcuts)
             .sheet(isPresented: $showAsk) {
                 AskPanelView(app: model, book: book, selection: askSelection)
                     .environmentObject(model)
@@ -184,7 +190,17 @@ struct ReaderView: View {
                 savePositionTask = nil
                 saveTextPosition(chapterIndex: newValue, characterOffset: pagedAnchor)
                 updateMinutesCache()
+                // The selection's range belongs to the old chapter. The text
+                // views also report nil when their content is replaced, but
+                // that arrives async — clear eagerly so a shortcut can't race
+                // it and annotate the wrong range.
+                currentSelection = nil
             }
+            // Rebuilt reading surfaces (scroll ↔ paged, PDF original ↔ reading
+            // view) take the live selection down with them without a final
+            // nil report — drop the mirrored state with them.
+            .onChange(of: layoutRaw) { _, _ in currentSelection = nil }
+            .onChange(of: pdfShowsOriginal) { _, _ in currentSelection = nil }
             .onChange(of: pagedAnchor) { _, newValue in
                 // Page turns come in bursts and every save rewrites the whole
                 // library JSON — debounce offset-only saves. Chapter changes
@@ -206,10 +222,15 @@ struct ReaderView: View {
     private var content: some View {
         Group {
             if let url = model.sourceURL(for: book), model.isPDF(book), pdfShowsOriginal {
-                PDFReaderView(book: book, url: url, onAsk: { selection in
-                    askSelection = selection
-                    showAsk = true
-                })
+                PDFReaderView(
+                    book: book,
+                    url: url,
+                    onAsk: { selection in
+                        askSelection = selection
+                        showAsk = true
+                    },
+                    onAskBook: askTheBook
+                )
             } else if let chapter {
                 readingSurface(for: chapter)
             } else {
@@ -231,7 +252,8 @@ struct ReaderView: View {
                     scrollTarget: $scrollTarget,
                     onAnnotate: { target, action in
                         handleAnnotation(in: chapter, target: target, action: action)
-                    }
+                    },
+                    onSelectionChange: { currentSelection = $0 }
                 )
                 scrollFooter(for: chapter)
             } else {
@@ -248,6 +270,7 @@ struct ReaderView: View {
                     onAnnotate: { target, action in
                         handleAnnotation(in: chapter, target: target, action: action)
                     },
+                    onSelectionChange: { currentSelection = $0 },
                     canOverflowBackward: chapterIndex > 0,
                     canOverflowForward: chapterIndex < book.chapters.count - 1,
                     onOverflow: { direction in
@@ -647,10 +670,7 @@ struct ReaderView: View {
     #endif
 
     private var askButton: some View {
-        let button = Button {
-            askSelection = nil // whole-book question
-            showAsk = true
-        } label: {
+        let button = Button(action: askTheBook) {
             #if os(macOS)
             // The one iris moment in the chrome: the ✦ AI mark.
             Text("\(AppTheme.aiGlyph) Ask")
@@ -661,16 +681,37 @@ struct ReaderView: View {
             Label("Ask the Book", systemImage: "sparkles")
             #endif
         }
-        .keyboardShortcut("a", modifiers: [.command, .shift])
         .accessibilityIdentifier("reader.ask")
         .accessibilityLabel("Ask the book")
-        .help("Ask the book (⇧⌘A)")
+        .help("Ask the book (⇧⌘A) — asks about the selection when text is selected")
+        // In native PDF mode the PDF surface registers ⇧⌘A itself (its
+        // selection lives in PDFKit); registering it here too would make the
+        // key equivalent ambiguous.
+        let shortcutted = Group {
+            if isPDFOriginal {
+                button
+            } else {
+                button.keyboardShortcut("a", modifiers: [.command, .shift])
+            }
+        }
         #if os(macOS)
         // Plain style so the iris tint survives the toolbar's own styling.
-        return button.buttonStyle(.plain)
+        return shortcutted.buttonStyle(.plain)
         #else
-        return button
+        return shortcutted
         #endif
+    }
+
+    /// Ask (toolbar button or ⇧⌘A): scoped to the current text selection when
+    /// there is one — the keyboard mirror of the selection menu's ✦ Ask —
+    /// otherwise a whole-book question.
+    private func askTheBook() {
+        if !isPDFOriginal, let chapter, let selected = currentSelection {
+            askSelection = model.makeSelection(in: chapter, range: selected)
+        } else {
+            askSelection = nil // whole-book question
+        }
+        showAsk = true
     }
 
     private var notesButton: some View {
@@ -695,6 +736,35 @@ struct ReaderView: View {
                 .keyboardShortcut("=", modifiers: .command)
             Button("Smaller text") { adjustFontSize(-1) }
                 .keyboardShortcut("-", modifiers: .command)
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    /// Invisible buttons carrying the annotation shortcuts: ⇧⌘H highlights the
+    /// current selection (last-used marker color), ⇧⌘M highlights it and opens
+    /// the note editor — the keyboard equivalents of the selection menu's
+    /// color dots and Note. No-ops without a selection. Absent in native PDF
+    /// mode, where PDFReaderView registers the same keys against the PDF
+    /// selection (duplicate key equivalents are ambiguous).
+    private var hiddenAnnotationShortcuts: some View {
+        Group {
+            if !isPDFOriginal {
+                Button("Highlight selection") {
+                    guard let chapter, let selected = currentSelection else { return }
+                    handleAnnotation(
+                        in: chapter, target: .selection(selected),
+                        action: .highlight(lastHighlightColor)
+                    )
+                }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+                Button("Add note to selection") {
+                    guard let chapter, let selected = currentSelection else { return }
+                    handleAnnotation(in: chapter, target: .selection(selected), action: .note)
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+            }
         }
         .opacity(0)
         .frame(width: 0, height: 0)
@@ -931,6 +1001,9 @@ struct ScrollReadingColumn: View {
     /// Programmatic jump target (see SelectableTextView.scrollToOffset).
     var scrollTarget: Binding<Int?>? = nil
     var onAnnotate: (AnnotationTarget, AnnotationAction) -> Void = { _, _ in }
+    /// The committed selection in chapter coordinates (nil ⇒ none) — feeds the
+    /// host's selection-dependent keyboard shortcuts.
+    var onSelectionChange: (Range<Int>?) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -954,7 +1027,8 @@ struct ScrollReadingColumn: View {
                 style: style,
                 inlineImages: inlineImages,
                 scrollToOffset: scrollTarget,
-                onAnnotate: onAnnotate
+                onAnnotate: onAnnotate,
+                onSelectionChange: onSelectionChange
             )
         }
         .padding(.horizontal, 24)

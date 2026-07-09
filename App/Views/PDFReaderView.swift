@@ -18,6 +18,10 @@ struct PDFReaderView: View {
     let book: Book
     let url: URL
     var onAsk: (Selection) -> Void
+    /// ⇧⌘A fallback when nothing is selected: a whole-book ask. This view owns
+    /// the shortcut in PDF mode (the host's toolbar Ask cedes it — a duplicate
+    /// key equivalent would be ambiguous), so it needs both flavors.
+    var onAskBook: () -> Void = {}
 
     @EnvironmentObject private var model: AppModel
     @StateObject private var controller = PDFReaderController()
@@ -29,6 +33,7 @@ struct PDFReaderView: View {
     var body: some View {
         content
             .toolbar { toolbarItems }
+            .background(hiddenAnnotationShortcuts)
             .sheet(item: $controller.pendingNote) { highlight in
                 PDFHighlightNoteSheet(
                     highlight: highlight,
@@ -151,6 +156,32 @@ struct PDFReaderView: View {
         }
     }
 
+    // MARK: Keyboard shortcuts
+
+    /// Invisible buttons mirroring the text reader's annotation shortcuts
+    /// against the PDF selection: ⇧⌘H highlight, ⇧⌘M note, ⇧⌘A ask (about the
+    /// selection, else the whole book). Hidden-button pattern per
+    /// ReaderView.hiddenFontShortcuts.
+    private var hiddenAnnotationShortcuts: some View {
+        Group {
+            Button("Highlight selection") { controller.highlightSelectionFromKeyboard() }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+            Button("Add note to selection") { controller.noteSelectionFromKeyboard() }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+            Button("Ask the book") {
+                if let selection = controller.askSelectionFromKeyboard() {
+                    onAsk(selection)
+                } else {
+                    onAskBook()
+                }
+            }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
     // MARK: Bookmarks
 
     private var currentBookmark: Bookmark? {
@@ -268,6 +299,7 @@ struct PDFReaderView: View {
     let book: Book
     let url: URL
     var onAsk: (Selection) -> Void
+    var onAskBook: () -> Void = {}
 
     var body: some View {
         ContentUnavailableView("PDF rendering unavailable", systemImage: "doc.richtext")

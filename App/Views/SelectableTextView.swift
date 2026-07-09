@@ -98,6 +98,11 @@ struct SelectableTextView: View {
     var allowsInternalScrolling = true
     /// An annotation-menu action, with the target in `text` coordinates.
     var onAnnotate: (AnnotationTarget, AnnotationAction) -> Void = { _, _ in }
+    /// The committed selection, in `text` coordinates (nil ⇒ none). Reported
+    /// whenever it changes so hosts can drive selection-dependent keyboard
+    /// shortcuts (⇧⌘H highlight, ⇧⌘M note) — the selection itself lives only
+    /// in the platform text view.
+    var onSelectionChange: (Range<Int>?) -> Void = { _ in }
 
     #if canImport(UIKit)
     /// The target the floating bar is showing for (nil ⇒ bar hidden).
@@ -114,7 +119,8 @@ struct SelectableTextView: View {
             scrollTarget: scrollToOffset?.wrappedValue,
             clearScrollTarget: { scrollToOffset?.wrappedValue = nil },
             allowsInternalScrolling: allowsInternalScrolling,
-            onTarget: { barTarget = $0 }
+            onTarget: { barTarget = $0 },
+            onSelectionChange: onSelectionChange
         )
         .overlay(alignment: .bottom) {
             if let target = barTarget {
@@ -143,7 +149,8 @@ struct SelectableTextView: View {
             scrollTarget: scrollToOffset?.wrappedValue,
             clearScrollTarget: { scrollToOffset?.wrappedValue = nil },
             allowsInternalScrolling: allowsInternalScrolling,
-            onAnnotate: onAnnotate
+            onAnnotate: onAnnotate,
+            onSelectionChange: onSelectionChange
         )
     }
     #endif
@@ -258,6 +265,8 @@ private struct Representable: UIViewRepresentable {
     let allowsInternalScrolling: Bool
     /// Reports the annotation target to show the bar for (nil ⇒ hide).
     let onTarget: (AnnotationTarget?) -> Void
+    /// Reports the committed selection (see SelectableTextView).
+    let onSelectionChange: (Range<Int>?) -> Void
 
     func makeUIView(context: Context) -> UITextView {
         let view = AnnotatingUITextView()
@@ -297,6 +306,7 @@ private struct Representable: UIViewRepresentable {
     func updateUIView(_ view: UITextView, context: Context) {
         let coordinator = context.coordinator
         coordinator.onTarget = onTarget
+        coordinator.onSelectionChange = onSelectionChange
         coordinator.text = text
         coordinator.spans = highlights
         // Only rebuild the attributed string when the content actually changed —
@@ -353,12 +363,15 @@ private struct Representable: UIViewRepresentable {
         DispatchQueue.main.async { clearScrollTarget() }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(text: text, onTarget: onTarget) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: text, onTarget: onTarget, onSelectionChange: onSelectionChange)
+    }
 
     final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var text: String
         var spans: [HighlightSpan] = []
         var onTarget: (AnnotationTarget?) -> Void
+        var onSelectionChange: (Range<Int>?) -> Void
         weak var textView: UITextView?
         /// `sizeThatFits` cache (paged mode): the fitted height for the last
         /// proposed width. Invalidated whenever the rendered content changes.
@@ -367,14 +380,30 @@ private struct Representable: UIViewRepresentable {
 
         private var debounce: Timer?
         private var barVisible = false
+        private var lastReportedSelection: Range<Int>?
         private var renderedText: String?
         private var renderedSpans: [HighlightSpan] = []
         private var renderedStyle: ReaderStyle?
         private var renderedImageOffsets: [Int] = []
 
-        init(text: String, onTarget: @escaping (AnnotationTarget?) -> Void) {
+        init(
+            text: String,
+            onTarget: @escaping (AnnotationTarget?) -> Void,
+            onSelectionChange: @escaping (Range<Int>?) -> Void
+        ) {
             self.text = text
             self.onTarget = onTarget
+            self.onSelectionChange = onSelectionChange
+        }
+
+        /// Deduped so a drag's continuous callbacks don't spam SwiftUI state,
+        /// and dispatched async because the selection can collapse inside
+        /// `updateUIView` (attributedText reassignment) — writing SwiftUI
+        /// state synchronously there is undefined behavior.
+        private func reportSelection(_ range: Range<Int>?) {
+            guard range != lastReportedSelection else { return }
+            lastReportedSelection = range
+            DispatchQueue.main.async { [weak self] in self?.onSelectionChange(range) }
         }
 
         deinit { debounce?.invalidate() }
@@ -419,6 +448,7 @@ private struct Representable: UIViewRepresentable {
             debounce?.invalidate()
             let selected = textView.selectedRange
             guard selected.length > 0 else {
+                reportSelection(nil)
                 hideBar()
                 return
             }
@@ -428,6 +458,7 @@ private struct Representable: UIViewRepresentable {
                 guard current.length > 0,
                       let range = TextRangeConvert.characterRange(from: current, in: self.text)
                 else { return }
+                self.reportSelection(range)
                 self.show(.selection(range))
             }
         }
@@ -489,6 +520,8 @@ private struct Representable: NSViewRepresentable {
     let clearScrollTarget: () -> Void
     let allowsInternalScrolling: Bool
     let onAnnotate: (AnnotationTarget, AnnotationAction) -> Void
+    /// Reports the committed selection (see SelectableTextView).
+    let onSelectionChange: (Range<Int>?) -> Void
 
     func makeNSView(context: Context) -> NSScrollView {
         // Built by hand (not NSTextView.scrollableTextView()) so the document
@@ -557,6 +590,7 @@ private struct Representable: NSViewRepresentable {
         guard let textView = scroll.documentView as? NSTextView else { return }
         let coordinator = context.coordinator
         coordinator.onAnnotate = onAnnotate
+        coordinator.onSelectionChange = onSelectionChange
         coordinator.text = text
         coordinator.spans = highlights
         coordinator.theme = style.theme
@@ -626,7 +660,10 @@ private struct Representable: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: text, theme: style.theme, onAnnotate: onAnnotate)
+        Coordinator(
+            text: text, theme: style.theme,
+            onAnnotate: onAnnotate, onSelectionChange: onSelectionChange
+        )
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -635,6 +672,7 @@ private struct Representable: NSViewRepresentable {
         /// Reading theme of the hosting page, forwarded to the menu.
         var theme: ReadingTheme
         var onAnnotate: (AnnotationTarget, AnnotationAction) -> Void
+        var onSelectionChange: (Range<Int>?) -> Void
         weak var textView: NSTextView?
         /// `sizeThatFits` cache (paged mode): the fitted height for the last
         /// proposed width. Invalidated whenever the rendered content changes.
@@ -648,6 +686,7 @@ private struct Representable: NSViewRepresentable {
         private var keyboardDebounce: Timer?
         private var scrollObserver: NSObjectProtocol?
         private var frameObserver: NSObjectProtocol?
+        private var lastReportedSelection: Range<Int>?
 
         private var renderedText: String?
         private var renderedSpans: [HighlightSpan] = []
@@ -657,11 +696,23 @@ private struct Representable: NSViewRepresentable {
         init(
             text: String,
             theme: ReadingTheme,
-            onAnnotate: @escaping (AnnotationTarget, AnnotationAction) -> Void
+            onAnnotate: @escaping (AnnotationTarget, AnnotationAction) -> Void,
+            onSelectionChange: @escaping (Range<Int>?) -> Void
         ) {
             self.text = text
             self.theme = theme
             self.onAnnotate = onAnnotate
+            self.onSelectionChange = onSelectionChange
+        }
+
+        /// Deduped so a drag's continuous delegate callbacks don't spam
+        /// SwiftUI state, and dispatched async because the selection collapses
+        /// inside `updateNSView` (setAttributedString) — writing SwiftUI state
+        /// synchronously there is undefined behavior.
+        private func reportSelection(_ range: Range<Int>?) {
+            guard range != lastReportedSelection else { return }
+            lastReportedSelection = range
+            DispatchQueue.main.async { [weak self] in self?.onSelectionChange(range) }
         }
 
         deinit {
@@ -728,6 +779,7 @@ private struct Representable: NSViewRepresentable {
             if selected.length > 0 {
                 guard let range = TextRangeConvert.characterRange(from: selected, in: text)
                 else { return }
+                reportSelection(range)
                 present(target: .selection(range), anchor: selected)
             } else if let offset = TextRangeConvert.characterOffset(
                 fromUTF16Location: selected.location, in: text
@@ -746,6 +798,7 @@ private struct Representable: NSViewRepresentable {
             keyboardDebounce?.invalidate()
             guard selected.length > 0 else {
                 // Selection collapsed — the menu no longer has a subject.
+                reportSelection(nil)
                 dismissMenu()
                 return
             }
@@ -761,6 +814,7 @@ private struct Representable: NSViewRepresentable {
                 guard current.length > 0,
                       let range = TextRangeConvert.characterRange(from: current, in: self.text)
                 else { return }
+                self.reportSelection(range)
                 self.present(target: .selection(range), anchor: current)
             }
         }

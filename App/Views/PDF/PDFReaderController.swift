@@ -476,6 +476,49 @@ final class PDFReaderController: NSObject, ObservableObject {
         dismissMenu()
     }
 
+    // MARK: Keyboard shortcuts
+
+    /// The selection a keyboard shortcut should act on: the live PDFView
+    /// selection (the shortcut can fire before the menu's debounce settles),
+    /// falling back to the one the menu captured when it appeared.
+    private func committedSelection() -> PDFSelection? {
+        if let current = pdfView?.currentSelection,
+           let text = current.string,
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return current
+        }
+        return pendingSelection
+    }
+
+    /// ⇧⌘H: highlight the current selection in the last-used color — the
+    /// keyboard equivalent of the menu's color dots. No-op without a selection.
+    func highlightSelectionFromKeyboard() {
+        guard let selection = committedSelection() else { return }
+        pendingSelection = selection
+        createHighlightsFromPendingSelection(color: lastUsedColor)
+    }
+
+    /// ⇧⌘M: highlight the current selection and open its note editor — the
+    /// keyboard equivalent of the menu's Note. No-op without a selection.
+    func noteSelectionFromKeyboard() {
+        guard let selection = committedSelection() else { return }
+        pendingSelection = selection
+        guard let created = createHighlightsFromPendingSelection(
+            color: lastUsedColor
+        ).first else { return }
+        pendingNoteIsNew = true
+        pendingNote = created
+    }
+
+    /// ⇧⌘A: the Ask `Selection` for the current PDF selection, or nil when
+    /// nothing is selected so the caller can fall back to a whole-book ask.
+    func askSelectionFromKeyboard() -> Selection? {
+        guard let selection = committedSelection() else { return nil }
+        let built = askSelection(quoted: selection.string ?? "", page: selection.pages.first)
+        finishSelectionAction()
+        return built
+    }
+
     // MARK: Tap/click → edit menu
 
     private func installTapRecognizer(on view: PDFView) {
