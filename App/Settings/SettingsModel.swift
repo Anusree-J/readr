@@ -91,8 +91,12 @@ final class SettingsModel: ObservableObject {
         // the flow borrows the Codex CLI's client registration and its tokens
         // are not expected to authenticate against api.openai.com, and no
         // token-refresh path is wired up yet (`OAuthClient.refresh` has no
-        // call sites). Re-enable by returning `.openAI` once both are fixed —
-        // the sign-in button reappears automatically (see `supportsOAuth`).
+        // call sites). On iOS the flow additionally needs an in-process
+        // browser (SFSafariViewController): opening external Safari suspends
+        // the app, and the suspended loopback server can't answer the
+        // 127.0.0.1 redirect. Re-enable by returning `.openAI` once all are
+        // fixed — the sign-in button reappears automatically (see
+        // `supportsOAuth`), and flip testProviderSettingsOffersNoOAuthSignIn.
         case .openAI: return nil
         // Anthropic subscription OAuth is intentionally NOT offered: Anthropic's
         // Consumer Terms prohibit using Free/Pro/Max OAuth tokens in third-party

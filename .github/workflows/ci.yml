@@ -27,6 +27,11 @@ jobs:
     name: Build Readr app (iOS + macOS)
     # macOS 15 ships Xcode 16, which reads the project format XcodeGen emits.
     runs-on: macos-15
+    env:
+      # Simulator names drift across Xcode images; keep them in one place and
+      # check `xcrun simctl list devicetypes` when a rename breaks the job.
+      IPHONE_SIM: iPhone 16
+      IPAD_SIM: iPad Pro 13-inch (M4)
     steps:
       - uses: actions/checkout@v4
       - name: Show Xcode version
@@ -44,6 +49,17 @@ jobs:
           -destination 'generic/platform=macOS'
           -skipPackagePluginValidation
           CODE_SIGNING_ALLOWED=NO
+      # Device SDK, not simulator: catches iOS-device-only breakage (missing
+      # frameworks, arch issues) on every PR instead of at TestFlight time.
+      - name: Build (iOS device SDK)
+        run: >
+          set -o pipefail &&
+          xcodebuild build
+          -project Readr.xcodeproj
+          -scheme Readr
+          -destination 'generic/platform=iOS'
+          -skipPackagePluginValidation
+          CODE_SIGNING_ALLOWED=NO
       # Offscreen SwiftUI renders of the macOS-only surfaces (m-prefixed
       # PNGs). App-hosted unit tests, not XCUITest — deterministic on runners.
       - name: Snapshot tests (macOS)
@@ -56,21 +72,35 @@ jobs:
           -skipPackagePluginValidation
           -resultBundlePath MacResults
           CODE_SIGNING_ALLOWED=NO
-      - name: UI tests (iOS Simulator)
+      - name: UI tests (iPhone Simulator)
         run: >
           set -o pipefail &&
           xcodebuild test
           -project Readr.xcodeproj
           -scheme Readr
-          -destination 'platform=iOS Simulator,name=iPhone 16'
+          -destination "platform=iOS Simulator,name=${IPHONE_SIM}"
           -skipPackagePluginValidation
           -resultBundlePath TestResults
+          CODE_SIGNING_ALLOWED=NO
+      # Same suite at iPad size: regular-width layouts (side-by-side split
+      # view, double-page reader) take different code paths than the iPhone's
+      # compact ones, so iPhone-green does not imply iPad-green.
+      - name: UI tests (iPad Simulator)
+        run: >
+          set -o pipefail &&
+          xcodebuild test
+          -project Readr.xcodeproj
+          -scheme Readr
+          -destination "platform=iOS Simulator,name=${IPAD_SIM}"
+          -skipPackagePluginValidation
+          -resultBundlePath IPadResults
           CODE_SIGNING_ALLOWED=NO
       - name: Extract screenshots
         if: always()
         run: |
           brew install chargepoint/xcparse/xcparse
           xcparse screenshots TestResults.xcresult shots || true
+          xcparse screenshots IPadResults.xcresult shots/ipad || true
           xcparse attachments MacResults.xcresult shots --uti public.png || true
           ls -R shots || true
       - name: Publish screenshots

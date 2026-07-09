@@ -72,6 +72,27 @@ final class ReadrAppUITests: XCTestCase {
         )
     }
 
+    // M6 (TestFlight beta) — subscription OAuth stays hidden until the flow is
+    // verified end-to-end on iOS (the loopback redirect needs the in-process
+    // browser work tracked for M7). The beta must only surface working paths,
+    // so the settings screen offers API-key fields but no sign-in button.
+    // M7 flips this assertion when it re-enables OAuth.
+    func testProviderSettingsOffersNoOAuthSignIn() {
+        let app = launchSeeded()
+        let settingsButton = button(app, id: "library.settings", label: "AI providers")
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 10))
+        settingsButton.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["AI Providers"].waitForExistence(timeout: 5)
+            || app.navigationBars["AI Providers"].waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(
+            app.buttons["Sign in with subscription"].firstMatch.exists,
+            "Subscription OAuth is not beta-ready; the sign-in button must stay hidden"
+        )
+    }
+
     // J3 — the Notes panel opens from the reader and shows the seeded
     // highlights (quoted text + the Create Article entry point).
     func testNotesPanelShowsSeededHighlights() {

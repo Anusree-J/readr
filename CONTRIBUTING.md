@@ -20,7 +20,18 @@ swift build
 swift test
 ```
 
-The full app requires **macOS + Xcode 15+**.
+The full app requires **macOS + Xcode 15+**:
+
+```sh
+xcodegen generate && open Readr.xcodeproj   # run the Readr scheme (macOS or iOS)
+```
+
+Simulator builds need no signing setup. To run on a physical iPhone/iPad,
+pick your team once in Xcode's Signing & Capabilities pane after generating
+(the setting lives in the generated project, so regeneration clears it), or
+pass it on the command line: `xcodebuild ... DEVELOPMENT_TEAM=<your team id>`.
+The team ID is intentionally never committed — release signing happens in CI
+(see `.github/workflows/testflight.yml` and `release.yml`).
 
 ## Ground rules
 

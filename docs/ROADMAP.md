@@ -98,6 +98,43 @@ Goal: the best reader app for the Mac — nobody goes back to Apple Books.
 - kosync (KOReader) progress-sync interop; Calibre/OPDS import
 - List view + metadata editing; user collections; parallel read (two books)
 
+## M6–M8 — iPhone & iPad: TestFlight beta (in progress)
+
+The iOS UI already exists (multiplatform target, iPhone-simulator UITests in
+CI); these milestones make it shippable on real devices. Spec:
+docs/DEVELOPMENT-PLAN.md §M6–M8.
+
+### M6 — Signed builds + TestFlight pipeline
+- [x] UITest locking OAuth hidden in the beta (flips in M7)
+- [x] project.yml iOS release config (export compliance, orientations, device
+  family, automatic signing — team ID injected by CI, never in the repo)
+- [x] CI: iPad-simulator UITest lane + `generic/platform=iOS` device build
+- [x] `.github/workflows/testflight.yml` — archive with cloud signing (App
+  Store Connect API key) and upload straight to TestFlight
+- [ ] One-time App Store Connect setup (bundle ID, app record, API key,
+  GitHub secrets) — see the workflow header for the exact secret names
+- [ ] Exit gate: TestFlight install verified on a physical iPhone and iPad
+  (import, read, highlight, BYOK ask)
+
+### M7 — iOS platform correctness
+- [ ] Files-app handler: `CFBundleDocumentTypes` + open-in-place +
+  `.onOpenURL` import (UITest via `-uiTestOpenURL` fixture)
+- [ ] OAuth on iOS: in-process SFSafariViewController presentation (external
+  Safari suspends the app and kills the loopback redirect); re-enable
+  `supportsOAuth` and flip the M6 UITest
+- [ ] Hide the Local provider row on iOS (loopback Ollama is a dead end
+  on-device; LAN host + ATS exception is a fast-follow)
+
+### M8 — iPad experience
+- [ ] Size-class audit of `#if os(iOS)` branches (`os()` = capability,
+  `horizontalSizeClass` = layout); iPad UITests (split view, double-page,
+  hardware-keyboard page turns)
+- [ ] Pointer `.hoverEffect`s; arrow-key page turns via `.onKeyPress`
+- [ ] iPad screenshots in the `ci-screenshots` flow
+- [ ] Deferred: multi-window / Stage Manager (macOS per-book WindowGroup is
+  the template); iCloud sync (seam: `LibraryStore` behind
+  `AppModel.makeDefaultStore()`)
+
 ## Open questions / decisions to revisit
 - OAuth feasibility for "log in with Claude / ChatGPT" vs. API keys only.
 - SwiftData vs. GRDB for persistence.

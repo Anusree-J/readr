@@ -33,8 +33,21 @@ you can ask the book questions and turn highlights into articles).
 
 ```sh
 swift build && swift test          # ReadrKit (any Swift platform)
-xcodegen generate && open Readr.xcodeproj   # full app (macOS only)
+xcodegen generate && open Readr.xcodeproj   # full app (build env: macOS only)
 ```
 
-CI (`.github/workflows/ci.yml`) runs `swift build` + `swift test` on PRs and on
-`main`.
+CI (`.github/workflows/ci.yml`) runs `swift build` + `swift test`, the macOS
+app build + snapshot tests, an iOS device-SDK build, and the XCUITest suite on
+iPhone **and iPad** simulators, on PRs and on `main`.
+
+## Releases
+
+- **macOS**: `.github/workflows/release.yml` — Developer-ID sign + notarize
+  (secrets `MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `APPLE_ID`,
+  `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`).
+- **iOS → TestFlight**: `.github/workflows/testflight.yml` — cloud automatic
+  signing via App Store Connect API key (secrets `APP_STORE_CONNECT_KEY_ID`,
+  `APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_API_KEY_P8`, plus
+  `APPLE_TEAM_ID`). The team ID is never committed to the repo.
+- Both trigger on `v*` tags or manual dispatch. iOS/iPad milestones: M6–M8 in
+  `docs/DEVELOPMENT-PLAN.md`.
