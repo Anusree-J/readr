@@ -1,6 +1,8 @@
 name: Release
 
-# Build and publish a macOS app artifact. Two triggers:
+# Build and publish a macOS app artifact. (The iOS lane lives in
+# testflight.yml — same triggers, separate workflow so either store's hiccup
+# never blocks the other.) Two triggers:
 #  - pushing a version tag (v1.0.0, ...)
 #  - manual dispatch with a version input (the tag is then created by the
 #    release action at the dispatched commit) — needed because some git

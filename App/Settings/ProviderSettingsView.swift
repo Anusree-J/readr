@@ -26,7 +26,10 @@ struct ProviderSettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     sectionLabel("MODEL")
-                    ForEach(model.kinds, id: \.self) { kind in
+                    // displayedKinds, not kinds: the Local row is hidden on
+                    // iOS (loopback Ollama is unreachable on-device — see
+                    // SettingsModel.displayedKinds).
+                    ForEach(model.displayedKinds, id: \.self) { kind in
                         providerCard(kind)
                     }
 

@@ -1,0 +1,154 @@
+name: TestFlight
+
+# Build, sign, and upload the iOS app to TestFlight. Same dual trigger as the
+# macOS release workflow (release.yml), and a separate workflow so a hiccup in
+# either store lane never blocks the other:
+#  - pushing a version tag (v1.0.0, ...)
+#  - manual dispatch with a version input
+#
+# Signing is CLOUD-MANAGED: xcodebuild -allowProvisioningUpdates plus an App
+# Store Connect API key lets Xcode create/fetch the Apple Distribution
+# certificate and provisioning profile on the runner — no .p12 export, no
+# profile files in secrets. The team ID is injected here and never lives in
+# the repo.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   APP_STORE_CONNECT_KEY_ID     10-char key ID of the ASC API key
+#   APP_STORE_CONNECT_ISSUER_ID  issuer UUID (ASC → Users and Access → Integrations)
+#   APP_STORE_CONNECT_API_KEY_P8 base64 of the downloaded .p8
+#                                (base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy)
+#   APPLE_TEAM_ID                10-char team ID — shared with release.yml
+#
+# The API key needs the App Manager role so cloud signing can manage
+# certificates/profiles. Versioning: MARKETING_VERSION comes from the tag
+# (v0.2.0 → 0.2.0); CURRENT_PROJECT_VERSION is the workflow run number, so
+# every upload gets a fresh, monotonic build number — including re-dispatches
+# after a failed upload.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. v1.0.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ios-testflight:
+    name: Build & upload Readr (iOS) to TestFlight
+    runs-on: macos-15
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+      HAS_ASC_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 != '' && 'true' || 'false' }}
+    steps:
+      # Three outcomes: all iOS secrets present → proceed; none present →
+      # warn + skip (a macOS-only v* release via release.yml is unaffected);
+      # partially present → fail loudly rather than die deep inside xcodebuild
+      # with an opaque signing error. APPLE_TEAM_ID is shared with the macOS
+      # lane, so "none configured" is judged on the three iOS-specific secrets.
+      - name: Check secrets
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          n=0
+          [ -n "$KEY_ID" ] && n=$((n+1))
+          [ -n "$ISSUER_ID" ] && n=$((n+1))
+          [ -n "$P8" ] && n=$((n+1))
+          if [ "$n" -eq 0 ]; then
+            echo "::warning::No App Store Connect secrets configured; skipping the iOS TestFlight upload (a macOS-only v* release is unaffected)."
+            exit 0
+          fi
+          if [ "$n" -lt 3 ]; then
+            echo "::error::App Store Connect secrets are partially configured. Set all of APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_API_KEY_P8 (and APPLE_TEAM_ID)."
+            exit 1
+          fi
+          if [ -z "$TEAM_ID" ]; then
+            echo "::error::APP_STORE_CONNECT_* are set but APPLE_TEAM_ID is missing — required for signing."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        if: env.HAS_ASC_KEY == 'true'
+      - name: Install XcodeGen
+        if: env.HAS_ASC_KEY == 'true'
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        if: env.HAS_ASC_KEY == 'true'
+        run: xcodegen generate
+      - name: Materialize App Store Connect API key
+        if: env.HAS_ASC_KEY == 'true'
+        env:
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          echo "$APP_STORE_CONNECT_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+      - name: Archive (iOS)
+        if: env.HAS_ASC_KEY == 'true'
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: >
+          set -o pipefail &&
+          xcodebuild archive
+          -project Readr.xcodeproj
+          -scheme Readr
+          -destination 'generic/platform=iOS'
+          -archivePath build/Readr.xcarchive
+          -skipPackagePluginValidation
+          -allowProvisioningUpdates
+          -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8"
+          -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID"
+          -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+          DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+          MARKETING_VERSION="${VERSION#v}"
+          CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+      - name: Upload to TestFlight
+        if: env.HAS_ASC_KEY == 'true'
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        # destination:upload makes -exportArchive hand the build straight to
+        # App Store Connect — no separate altool/transporter step.
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath build/Readr.xcarchive \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+      - name: Clean up API key
+        if: always() && env.HAS_ASC_KEY == 'true'
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
+      # The archive (with dSYMs) is the debugging artifact for this upload;
+      # keep it for a while in case a beta crash needs symbolication.
+      # always(): keep the dSYM-bearing archive even if the upload step failed —
+      # it's exactly what you need to debug a failed upload or a beta crash.
+      - name: Upload archive artifact
+        if: always() && env.HAS_ASC_KEY == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Readr-iOS-${{ env.VERSION }}.xcarchive
+          path: build/Readr.xcarchive
+          retention-days: 30

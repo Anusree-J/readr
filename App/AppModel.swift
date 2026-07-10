@@ -55,6 +55,21 @@ final class AppModel: ObservableObject {
                 statesByBook[book.id] = state
             }
         }
+
+        // `-uiTestOpenURL <path>`: deterministic stand-in for the Files-app /
+        // Finder open-in flow. XCUITest can't drive the system Files UI, so a
+        // UI test passes a fixture path and we import it through the exact same
+        // `importBook` path `.onOpenURL` uses. Xcode maps `-key value` launch
+        // arguments into `UserDefaults.standard`, so the path reads back via
+        // the defaults key. Requires `-uiTestSeed` too, so the import lands in
+        // the throwaway in-memory store — never the real on-disk library
+        // (which would leak the imported book + its copied source across runs).
+        if ProcessInfo.processInfo.arguments.contains("-uiTestOpenURL"),
+           ProcessInfo.processInfo.arguments.contains("-uiTestSeed"),
+           let path = UserDefaults.standard.string(forKey: "uiTestOpenURL") {
+            let url = URL(fileURLWithPath: path)
+            Task { await self.importBook(at: url) }
+        }
     }
 
     private static func makeCredentialStore() -> any CredentialStore {
@@ -264,7 +279,21 @@ final class AppModel: ObservableObject {
 
     // MARK: Import
 
+    /// Files whose import is in flight, keyed by standardized URL. Guards
+    /// against the same file being imported twice concurrently — `onOpenURL`
+    /// can deliver one URL to more than one library scene (e.g. two macOS
+    /// windows), and since `Book.id` is random per parse the store can't
+    /// dedupe after the fact.
+    private var importingURLs: Set<URL> = []
+
     func importBook(at url: URL) async {
+        // Idempotent against concurrent duplicate delivery. The check-and-insert
+        // is atomic on the main actor (no await before it); the key clears when
+        // this import finishes, so a deliberate later re-import still works.
+        let importKey = url.standardizedFileURL
+        guard !importingURLs.contains(importKey) else { return }
+        importingURLs.insert(importKey)
+        defer { importingURLs.remove(importKey) }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {

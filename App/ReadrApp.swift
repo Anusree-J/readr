@@ -21,13 +21,27 @@ struct ReadrApp: App {
         (ReadingTheme(rawValue: themeRaw) ?? .paper) == .night ? .dark : .light
     }
 
+    /// The library window's content, shared by both platform scene layouts so
+    /// behavior attached here (like open-URL import) can't drift between them.
+    /// `.onOpenURL` makes Readr an open-with target end to end: Finder
+    /// double-click / "Open With" on macOS, Files/Mail/Safari "open in" on
+    /// iOS (the document types are declared in project.yml). `importBook`
+    /// handles the security-scoped access and copies the file, so opening
+    /// in place is safe.
+    private var libraryWindowContent: some View {
+        LibraryShellView()
+            .environmentObject(model)
+            .preferredColorScheme(colorScheme)
+            .onOpenURL { url in
+                Task { await model.importBook(at: url) }
+            }
+    }
+
     var body: some Scene {
         #if os(macOS)
         WindowGroup {
-            LibraryShellView()
-                .environmentObject(model)
+            libraryWindowContent
                 .frame(minWidth: 900, minHeight: 600)
-                .preferredColorScheme(colorScheme)
         }
         .defaultSize(width: 1120, height: 740)
 
@@ -50,9 +64,7 @@ struct ReadrApp: App {
         }
         #else
         WindowGroup {
-            LibraryShellView()
-                .environmentObject(model)
-                .preferredColorScheme(colorScheme)
+            libraryWindowContent
         }
         #endif
     }

@@ -114,6 +114,57 @@ localization scaffolding, iCloud sync of library/annotations, performance pass
 
 **Exit:** J7 proven by test; accessibility & performance checklists pass.
 
+### M6 — iPhone & iPad: signed builds + TestFlight pipeline
+The iOS UI already exists (the app target is multiplatform and CI runs the
+XCUITest suite on an iPhone simulator); this milestone makes it *shippable*.
+
+**Tests first:**
+- `[ui]` provider settings offers no OAuth sign-in button (subscription OAuth
+  is not beta-ready — see SettingsModel.oauthConfig; M7 flips this test).
+- `[ci]` iPad-simulator UITest lane (same suite, regular-width code paths) and
+  a `generic/platform=iOS` device-SDK build on every PR.
+
+**Build:** `project.yml` iOS release config (`info:` plist block with
+export-compliance/orientations, `TARGETED_DEVICE_FAMILY`, automatic signing —
+team ID never in the repo, CI injects it); `.github/workflows/testflight.yml`
+(cloud signing via App Store Connect API key, `-exportArchive
+destination:upload`); docs.
+
+**Exit:** a tag/dispatch lands a build in TestFlight internal testing that
+installs on a physical iPhone and iPad; import EPUB+PDF, read, highlight, and
+BYOK ask-the-book all work on device; CI green including the new lanes.
+
+### M7 — iOS platform correctness: Files-app integration + OAuth
+**Tests first:**
+- `[ui]` `-uiTestOpenURL <fixture>` launch argument drives the `onOpenURL`
+  import path ⇒ book appears on the shelf.
+- `[ui]` M6's no-OAuth test flips: the sign-in button is present again.
+
+**Build:** `CFBundleDocumentTypes` + `LSSupportsOpeningDocumentsInPlace`
+(register as an EPUB/PDF handler in the Files app); `.onOpenURL` import in
+`ReadrApp`; OAuth on iOS via in-process `SFSafariViewController` (external
+Safari suspends the app, killing the loopback redirect — the server and
+`ReadrKit` auth stay unchanged); hide the Local provider row on iOS (loopback
+Ollama is a dead end on-device).
+
+**Exit:** tapping an EPUB in Files/Mail imports into Readr on device; OAuth
+sign-in completes without leaving the app; UITests green on both simulators.
+
+### M8 — iPad experience
+**Tests first (iPad simulator):**
+- `[ui]` sidebar and detail visible side by side in regular width.
+- `[ui]` reader offers double-page mode on iPad.
+- `[ui]` hardware-keyboard arrow keys turn pages.
+
+**Build:** audit `#if os(iOS)` branches — `os()` for platform capability,
+`horizontalSizeClass` for layout; arrow-key page turns (`.onKeyPress`);
+pointer `.hoverEffect` on custom controls; iPad screenshots in the
+`ci-screenshots` flow. Multi-window/Stage Manager deliberately deferred
+(the macOS per-book `WindowGroup` is the template when it lands).
+
+**Exit:** iPad TestFlight build walks J1–J6 in both orientations and Split
+View; iPad UITest lane green.
+
 ---
 
 ## Risk register
