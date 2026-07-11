@@ -4,7 +4,7 @@
 name: Readr
 
 options:
-  bundleIdPrefix: com.readr
+  bundleIdPrefix: com.readrai
   deploymentTarget:
     iOS: "17.0"
     macOS: "14.0"
@@ -87,7 +87,8 @@ targets:
         UISupportsDocumentBrowser: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.readr.app
+        # Must match the App ID registered in the Apple Developer portal.
+        PRODUCT_BUNDLE_IDENTIFIER: com.readrai.app
         GENERATE_INFOPLIST_FILE: "YES"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -114,7 +115,7 @@ targets:
       - target: Readr
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.readr.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.readrai.uitests
         SWIFT_VERSION: "5.9"
 
   # macOS-only visual coverage: app-hosted unit tests that render the key
@@ -129,7 +130,7 @@ targets:
       - target: Readr
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.readr.snapshottests
+        PRODUCT_BUNDLE_IDENTIFIER: com.readrai.snapshottests
         SWIFT_VERSION: "5.9"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Readr.app/Contents/MacOS/Readr"
         BUNDLE_LOADER: "$(TEST_HOST)"
