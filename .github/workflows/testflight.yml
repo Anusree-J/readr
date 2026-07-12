@@ -87,6 +87,11 @@ jobs:
           APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
         run: |
           echo "$APP_STORE_CONNECT_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+      # CODE_SIGN_IDENTITY="Apple Distribution": automatic signing otherwise
+      # tries to mint a DEVELOPMENT profile at archive time, which requires a
+      # registered device on the team ("Your team has no devices…" on a fresh
+      # account/CI). Distribution signing needs no devices, and App Store
+      # export re-signs with it anyway.
       - name: Archive (iOS)
         if: env.HAS_ASC_KEY == 'true'
         env:
@@ -106,6 +111,7 @@ jobs:
           -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID"
           -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
           DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+          CODE_SIGN_IDENTITY="Apple Distribution"
           MARKETING_VERSION="${VERSION#v}"
           CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
       - name: Upload to TestFlight
