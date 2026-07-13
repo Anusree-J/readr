@@ -75,6 +75,21 @@ jobs:
           fi
       - uses: actions/checkout@v4
         if: env.HAS_ASC_KEY == 'true'
+      # App Store Connect refuses uploads built with an SDK older than iOS 26
+      # (Apple's annual SDK floor, effective April 2026), but the image's
+      # default Xcode is 16.4 / iOS 18.5 SDK. Pin the newest Xcode 26.x; fail
+      # with the available list if the image doesn't carry one.
+      - name: Select Xcode 26
+        if: env.HAS_ASC_KEY == 'true'
+        run: |
+          ls -d /Applications/Xcode*.app || true
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then
+            echo "::error::No Xcode 26.x on this runner image (see listing above) — move this job to a newer macos image."
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
       - name: Install XcodeGen
         if: env.HAS_ASC_KEY == 'true'
         run: brew install xcodegen
@@ -87,11 +102,16 @@ jobs:
           APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
         run: |
           echo "$APP_STORE_CONNECT_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
-      - name: Archive (iOS)
+      # The archive is deliberately UNSIGNED (CODE_SIGNING_ALLOWED=NO): with
+      # automatic signing, archive-time signing wants a DEVELOPMENT profile,
+      # which requires a registered device on the team ("Your team has no
+      # devices…" on a fresh account/CI); and overriding CODE_SIGN_IDENTITY
+      # trips "conflicting provisioning settings". The App Store export step
+      # below re-signs the app with the Distribution identity anyway — cloud
+      # signing mints the cert + App Store profile there, no devices needed.
+      - name: Archive (iOS, unsigned)
         if: env.HAS_ASC_KEY == 'true'
         env:
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: >
           set -o pipefail &&
@@ -101,10 +121,7 @@ jobs:
           -destination 'generic/platform=iOS'
           -archivePath build/Readr.xcarchive
           -skipPackagePluginValidation
-          -allowProvisioningUpdates
-          -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8"
-          -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID"
-          -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+          CODE_SIGNING_ALLOWED=NO
           DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
           MARKETING_VERSION="${VERSION#v}"
           CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
