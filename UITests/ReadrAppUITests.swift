@@ -109,7 +109,9 @@ final class ReadrAppUITests: XCTestCase {
         )
         for slug in ["anthropic", "openai"] {
             let id = "settings.getKey.\(slug)"
-            let present = app.links[id].firstMatch.waitForExistence(timeout: 5)
+            // Short wait: the sheet is already rendered (title asserted
+            // above), so this only absorbs accessibility-tree settling.
+            let present = app.links[id].firstMatch.waitForExistence(timeout: 2)
                 || app.buttons[id].firstMatch.exists
                 || app.otherElements[id].firstMatch.exists
             XCTAssertTrue(present, "Missing get-a-key link for \(slug)")
