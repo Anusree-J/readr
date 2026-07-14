@@ -60,10 +60,17 @@ final class LayoutPaginatorTests: XCTestCase {
         return ceil(layoutManager.usedRect(for: container).height)
     }
 
-    /// One line box plus paragraph spacing — the natural quantum of page
-    /// fill; a page can't be fuller than "one more line wouldn't fit".
-    private var lineQuantum: CGFloat {
-        style.fontSize * 1.2 + style.lineSpacing + style.fontSize * 0.6 + 2
+    /// The structural fill quantum: the most a full page can fall short of
+    /// its container. Chapters separate paragraphs with a blank line, so the
+    /// largest unit that can fail to fit at a page bottom is
+    /// paragraph-spacing + empty line + paragraph-spacing + text line —
+    /// two line boxes and two paragraph spacings. (A page can't be fuller
+    /// than "the next unit wouldn't fit"; mid-paragraph breaks only need one
+    /// line box of this.)
+    private var fillQuantum: CGFloat {
+        let lineBox = style.fontSize * 1.2 + style.lineSpacing
+        let paragraphSpacing = style.fontSize * 0.6
+        return lineBox * 2 + paragraphSpacing * 2 + 4
     }
 
     // MARK: - Contract
@@ -106,12 +113,12 @@ final class LayoutPaginatorTests: XCTestCase {
 
     func testInteriorPagesAreVisuallyFull() {
         let pages = paginate(makeText())
-        // Every page except the last must be full to within one line quantum
-        // of the container height — that's what "fixed pages" means.
+        // Every page except the last must be full to within the structural
+        // quantum of the container height — that's what "fixed pages" means.
         for page in pages.dropLast() {
             let height = renderedHeight(of: page.text, width: pageSize.width)
             XCTAssertGreaterThanOrEqual(
-                height, pageSize.height - lineQuantum,
+                height, pageSize.height - fillQuantum,
                 "An interior page must fill its frame (got \(height) of \(pageSize.height))"
             )
             XCTAssertLessThanOrEqual(
@@ -124,13 +131,13 @@ final class LayoutPaginatorTests: XCTestCase {
     func testFacingPagesBottomOutTogether() {
         let pages = paginate(makeText())
         guard pages.count >= 4 else { return XCTFail("Fixture should span several pages") }
-        // Consecutive interior pages (a spread) must end within one line
-        // quantum of each other — the two sides of an open book.
+        // Consecutive interior pages (a spread) must end within the
+        // structural quantum of each other — the two sides of an open book.
         for index in stride(from: 0, to: pages.count - 2, by: 2) {
             let left = renderedHeight(of: pages[index].text, width: pageSize.width)
             let right = renderedHeight(of: pages[index + 1].text, width: pageSize.width)
             XCTAssertLessThanOrEqual(
-                abs(left - right), lineQuantum,
+                abs(left - right), fillQuantum,
                 "Facing pages \(index)/\(index + 1) differ by \(abs(left - right))pt"
             )
         }
@@ -148,7 +155,7 @@ final class LayoutPaginatorTests: XCTestCase {
         guard pages.count >= 2 else { return XCTFail("Fixture should span several pages") }
         let first = renderedHeight(of: pages[0].text, width: pageSize.width)
         XCTAssertLessThanOrEqual(first, shortFirst.height + 1)
-        XCTAssertGreaterThanOrEqual(first, shortFirst.height - lineQuantum)
+        XCTAssertGreaterThanOrEqual(first, shortFirst.height - fillQuantum)
     }
 
     // MARK: - Degenerate input

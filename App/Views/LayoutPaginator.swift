@@ -12,13 +12,20 @@ import AppKit
 /// `ReadrKit.Paginator` splits on an estimated character capacity, so every
 /// page holds a different visual amount of text — ragged bottoms, and facing
 /// pages whose last lines sit at different heights, nothing like an open
-/// book. This paginator instead measures the SAME attributed string the
-/// reading surface renders (same font, line/paragraph spacing, image
-/// attachment bounds, zero container insets and fragment padding — see
+/// book. This paginator instead measures pages with TextKit using the SAME
+/// attributes the reading surface renders (font, line/paragraph spacing,
+/// image attachment bounds, zero insets and fragment padding — see
 /// `TextRangeConvert.attributedString` and the `SelectableTextView`
-/// representables) by filling one fixed-size `NSTextContainer` per page, so
-/// breaks land exactly where rendered lines end and every non-final page is
-/// visually full.
+/// representables).
+///
+/// Each page is measured EXACTLY as it will render: the layout for page k
+/// starts at that page's first visible character (boundary whitespace is
+/// folded into ranges, never rendered — see `Page`), fills one container of
+/// the page's text size, and keeps what fits. Measuring the whole chapter in
+/// one storage with chained containers instead would drift from rendering:
+/// paragraph-gap newlines at a page top occupy container space in a chained
+/// layout but are folded out of the rendered page, and trailing newlines
+/// would render a phantom empty line — the ragged bottoms this exists to fix.
 ///
 /// Lives in the app target: it needs TextKit, which `ReadrKit` (Linux-clean)
 /// can't import. `ReadrKit.Paginator` remains the geometry-free fallback and
@@ -31,13 +38,15 @@ struct LayoutPaginator {
     /// `containerSize(i)` (sizes vary per page: the spread's first page
     /// reserves the kicker band). `Page` semantics mirror
     /// `ReadrKit.Paginator`: ranges are contiguous and cover the whole text,
-    /// and whitespace folded at a page boundary is covered by `range` but
-    /// excluded from `text`, keeping `textStartOffset` the correct origin
-    /// for highlights and selections.
+    /// and boundary whitespace is covered by a `range` but excluded from
+    /// `text`. Interior page ranges END at their last visible character —
+    /// the whitespace run at a break belongs to the NEXT page's range — so
+    /// `textStartOffset` (which derives the origin from the range's end)
+    /// stays exact for every page.
     ///
-    /// Returns `[]` when measurement cannot cover the text (degenerate
-    /// geometry, or an attachment taller than a page) — the caller falls
-    /// back to the estimate-based paginator so reading never breaks.
+    /// Returns `[]` when measurement cannot proceed (degenerate geometry, an
+    /// attachment taller than a page) — the caller falls back to the
+    /// estimate-based paginator so reading never breaks.
     func paginate(_ text: String, containerSize: (Int) -> CGSize) -> [Page] {
         let chars = Array(text)
         let n = chars.count
@@ -46,18 +55,43 @@ struct LayoutPaginator {
         let attributed = TextRangeConvert.attributedString(
             text, highlights: [], style: style, inlineImages: inlineImages
         )
-        let storage = NSTextStorage(attributedString: attributed)
-        let layoutManager = NSLayoutManager()
-        storage.addLayoutManager(layoutManager)
 
-        // Fill one container per page; collect each page's UTF-16 end.
-        var utf16Ends: [Int] = []
-        var consumed = 0
-        while consumed < storage.length {
-            let size = containerSize(utf16Ends.count)
+        var pages: [Page] = []
+        var rangeStart = 0
+        while rangeStart < n {
+            // Fold boundary whitespace into this page's range; rendering
+            // starts at the first visible character.
+            var textStart = rangeStart
+            while textStart < n, chars[textStart].isWhitespace { textStart += 1 }
+            if textStart >= n {
+                // Only chapter-trailing whitespace remains: extend the last
+                // page's range over it. (Its `text` is unchanged, so this is
+                // the one place `textStartOffset`'s suffix derivation shifts
+                // by the folded run — same behavior as `Paginator`, and
+                // harmless: no visible character lives in that tail.)
+                if var last = pages.last {
+                    last.range = last.range.lowerBound..<n
+                    pages[pages.count - 1] = last
+                }
+                break
+            }
+
+            // Lay out the remainder from this page's first visible character
+            // in one page-sized container — identical to how the page's own
+            // text view will lay it out.
+            guard let sliceStart = TextRangeConvert.nsRange(
+                from: textStart..<n, in: text
+            ) else { return [] }
+            let slice = attributed.attributedSubstring(from: sliceStart)
+            let sliceText = String(chars[textStart..<n])
+
+            let size = containerSize(pages.count)
             guard size.width > 8, size.height > style.fontSize else {
                 return [] // degenerate geometry — caller falls back
             }
+            let storage = NSTextStorage(attributedString: slice)
+            let layoutManager = NSLayoutManager()
+            storage.addLayoutManager(layoutManager)
             let container = NSTextContainer(size: size)
             container.lineFragmentPadding = 0
             layoutManager.addTextContainer(container)
@@ -66,57 +100,42 @@ struct LayoutPaginator {
             let charRange = layoutManager.characterRange(
                 forGlyphRange: glyphRange, actualGlyphRange: nil
             )
-            let end = charRange.location + charRange.length
-            guard end > consumed else {
+            let localUTF16End = charRange.location + charRange.length
+            guard localUTF16End > 0 else {
                 // The container accepted nothing (an attachment taller than
                 // the page, or a measurement anomaly). Bail rather than loop.
                 return []
             }
-            consumed = end
-            utf16Ends.append(end)
-        }
-        guard !utf16Ends.isEmpty else { return [] }
 
-        // Convert UTF-16 boundaries to character offsets and build pages
-        // with the shared boundary-whitespace folding rules.
-        var pages: [Page] = []
-        var rangeStart = 0
-        for (index, utf16End) in utf16Ends.enumerated() {
-            let isLast = index == utf16Ends.count - 1
             var end: Int
-            if isLast {
+            if localUTF16End >= storage.length {
                 end = n
             } else {
-                // Glyph→character mapping lands on character boundaries, so
-                // conversion should always succeed; if a boundary ever fell
-                // mid-scalar, nudge FORWARD until it converts (the next page
-                // then starts on the same valid boundary — nothing is lost).
-                var location = utf16End
+                // Glyph→character mapping lands on character boundaries; if
+                // a boundary ever fell mid-scalar, nudge FORWARD until it
+                // converts (nothing is lost — the next page starts here).
+                var location = localUTF16End
                 var converted = TextRangeConvert.characterOffset(
-                    fromUTF16Location: location, in: text
+                    fromUTF16Location: location, in: sliceText
                 )
                 while converted == nil, location < storage.length {
                     location += 1
                     converted = TextRangeConvert.characterOffset(
-                        fromUTF16Location: location, in: text
+                        fromUTF16Location: location, in: sliceText
                     )
                 }
-                end = converted ?? n
+                end = textStart + (converted ?? sliceText.count)
             }
-            end = min(max(end, rangeStart), n)
-            // Fold boundary whitespace into the range, not the text.
-            var textStart = rangeStart
-            while textStart < end, chars[textStart].isWhitespace { textStart += 1 }
-            guard textStart < end else {
-                // Whitespace-only slice: extend the previous page's range
-                // over it (mirrors Paginator's trailing-whitespace fold).
-                if var last = pages.last {
-                    last.range = last.range.lowerBound..<end
-                    pages[pages.count - 1] = last
-                }
-                rangeStart = end
-                continue
+            end = min(max(end, textStart + 1), n)
+
+            // Trailing boundary whitespace belongs to the NEXT page's range
+            // (its leading fold): rendered page text must not end in
+            // newlines, which would draw a phantom empty line. Never trim
+            // below one visible character.
+            if end < n {
+                while end > textStart + 1, chars[end - 1].isWhitespace { end -= 1 }
             }
+
             pages.append(Page(text: String(chars[textStart..<end]), range: rangeStart..<end))
             rangeStart = end
         }
