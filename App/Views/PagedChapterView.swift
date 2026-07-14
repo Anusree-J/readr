@@ -64,6 +64,10 @@ struct PagedChapterView: View {
     /// The committed selection, reported in chapter coordinates (nil ⇒ none) —
     /// feeds the host's selection-dependent keyboard shortcuts.
     var onSelectionChange: (Range<Int>?) -> Void = { _ in }
+    /// A clean tap on the middle of the page (iOS): the parent toggles its
+    /// chrome, Apple-Books-style. Taps on the column's outer quarters turn
+    /// pages instead (see pageView), as do the margin strips.
+    var onChromeToggle: (() -> Void)? = nil
     /// Whether a turn past the first/last page has somewhere to go (the
     /// parent has an adjacent chapter). Keeps the arrows live at the edges.
     var canOverflowBackward = false
@@ -73,10 +77,6 @@ struct PagedChapterView: View {
     /// and swipes all funnel through here, so paging flows through the whole
     /// book instead of stopping at chapter walls.
     var onOverflow: ((Int) -> Void)? = nil
-    /// A clean tap on the middle of the page (iOS): the parent toggles its
-    /// chrome, Apple-Books-style. Taps on the column's outer quarters turn
-    /// pages instead (see pageView), as do the margin strips.
-    var onChromeToggle: (() -> Void)? = nil
 
     @State private var cache = PaginationCache()
     @FocusState private var focused: Bool
