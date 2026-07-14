@@ -555,7 +555,14 @@ struct ReaderView: View {
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
             }
-            .frame(minWidth: 260, idealWidth: 300, minHeight: 280, idealHeight: 360)
+            // Height hugs the chapter list (header + ~34pt rows) instead of a
+            // fixed ideal — a two-chapter book in an iPad popover was ~60%
+            // dead cream below the rows. Long books cap where scrolling
+            // takes over; iPhone's sheet detents below override this anyway.
+            .frame(
+                minWidth: 260, idealWidth: 300,
+                idealHeight: min(420, 64 + CGFloat(book.chapters.count) * 34)
+            )
             .background(style.theme.elevated)
             #if os(iOS)
             .presentationDetents([.medium, .large])
@@ -1193,9 +1200,11 @@ struct ScrollReadingColumn: View {
         }
         .padding(.horizontal, 24)
         .padding(.top, 46)
-        // ~80 characters per line: measure = 40 em (avg glyph ≈ 0.5 em for the
-        // serif content font) + the 48pt of column padding above.
-        .frame(maxWidth: style.fontSize * 40 + 48)
+        // ~65–70 characters per line: measure = 33 em (avg glyph ≈ 0.5 em for
+        // the serif content font) + the 48pt of column padding above — the
+        // book measure Apple Books holds on wide panes (PagedChapterView
+        // shares the same em count).
+        .frame(maxWidth: style.fontSize * 33 + 48)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(style.theme.paper)
     }

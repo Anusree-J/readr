@@ -251,22 +251,35 @@ struct AppearancePopover: View {
     private func spacingSegment(_ option: ReaderLineSpacing) -> some View {
         let selected = lineSpacingRaw == option.rawValue
         return Button { lineSpacingRaw = option.rawValue } label: {
-            Text(option.displayName)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(selected ? theme.inkColor : theme.muted)
-                .lineLimit(1)
-                .padding(.vertical, 5)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(selected ? theme.paper : .clear)
-                )
-                .contentShape(Rectangle())
+            segmentLabel(option.displayName, selected: selected)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(option.displayName) line spacing")
         .accessibilityIdentifier("appearance.spacing.\(option.rawValue)")
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// Shared segment chip. The selected state must read at a glance — a
+    /// paper-on-elevated fill alone was a few percent off the control
+    /// background (invisible on sepia), so the active chip adds a hairline
+    /// ring, a semibold label, and a whisper of lift.
+    private func segmentLabel(_ label: String, selected: Bool) -> some View {
+        Text(label)
+            .font(.system(size: 11.5, weight: selected ? .semibold : .medium))
+            .foregroundStyle(selected ? theme.inkColor : theme.muted)
+            .lineLimit(1)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(selected ? theme.paper : .clear)
+                    .shadow(color: .black.opacity(selected ? 0.10 : 0), radius: 2, y: 1)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(selected ? theme.line : .clear, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
     }
 
     private var justifyToggle: some View {
@@ -306,17 +319,7 @@ struct AppearancePopover: View {
         // tappable for the UI screenshot walk). Theme/font stay open so they
         // preview live.
         return Button { layoutRaw = value.rawValue; dismiss() } label: {
-            Text(label)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(selected ? theme.inkColor : theme.muted)
-                .lineLimit(1)
-                .padding(.vertical, 5)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(selected ? theme.paper : .clear)
-                )
-                .contentShape(Rectangle())
+            segmentLabel(label, selected: selected)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

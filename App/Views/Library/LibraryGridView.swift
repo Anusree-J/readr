@@ -110,7 +110,15 @@ struct LibraryGridView: View {
             }
         }
         .background(theme.background)
+        // iOS: the serif in-content header IS the screen title (HomeView does
+        // the same) — a second centered nav-bar copy 90pt above it read as a
+        // duplicate. The bar itself stays for back/toolbar. macOS keeps the
+        // window title for Mission Control and the Window menu.
+        #if os(iOS)
+        .navigationTitle("")
+        #else
         .navigationTitle(title)
+        #endif
     }
 
     // MARK: Header

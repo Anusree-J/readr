@@ -103,10 +103,12 @@ struct PagedChapterView: View {
     // the estimate always matches what the body renders).
     /// Text columns per spread — drives both the measure cap and capacity.
     private var columns: CGFloat { layout == .doublePage ? 2 : 1 }
-    /// ~40 em, like `ScrollReadingColumn` (avg serif glyph ≈ 0.5 em ⇒ ~75–80
-    /// chars/line). Sharing the em count keeps paged and scroll lines the same
+    /// ~33 em, like `ScrollReadingColumn` — ≈65–70 characters per line for
+    /// the serif content font, the book-typography measure Apple Books holds
+    /// on iPad (40 em ran to ~95+ characters in wide panes, the reviewed
+    /// gap). Sharing the em count keeps paged and scroll lines the same
     /// length at any text size.
-    private static let measureEms: CGFloat = 40
+    private static let measureEms: CGFloat = 33
     /// Per-column width cap: 40 em of text plus the interior side insets. On a
     /// window wider than the cap the block is centered and the surplus becomes
     /// symmetric paper margin; narrower, columns shrink to fit (see capacity).
