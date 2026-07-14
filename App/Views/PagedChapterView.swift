@@ -140,7 +140,9 @@ struct PagedChapterView: View {
     /// mutating it during render doesn't invalidate the view.
     private final class PaginationCache {
         var chapterID: UUID?
-        var capacity = 0
+        /// Geometry + style signature of the cached pagination (page text
+        /// size, font size, layout, kicker, image set) — any change reflows.
+        var key = ""
         var pages: [Page] = []
         /// Words from the start of each page to the chapter's end (index-
         /// aligned with `pages`). Computed once per pagination so the page
@@ -209,13 +211,47 @@ struct PagedChapterView: View {
     // MARK: - Pages
 
     private func paginate(for size: CGSize) -> [Page] {
-        let capacity = capacity(for: size)
-        if cache.chapterID == chapter.id, cache.capacity == capacity {
+        // The page's TEXT area, from the same terms the body renders with:
+        // column width capped at the measure minus interior side insets;
+        // height minus vertical insets and the bottom label band. The kicker
+        // band is subtracted per page below (only pages that show it).
+        let columnWidth = min(measure, size.width / columns)
+        let textWidth = max(1, columnWidth - (pageInsets.leading + pageInsets.trailing))
+        let pageHeight = max(
+            1, size.height - (pageInsets.top + pageInsets.bottom) - labelAllowance
+        )
+        let hasKicker = chapter.title != nil
+
+        let key = "\(Int(textWidth))x\(Int(pageHeight))|\(style.fontSize)|"
+            + "\(layout.rawValue)|\(hasKicker)|\(inlineImages.keys.sorted())"
+        if cache.chapterID == chapter.id, cache.key == key {
             return cache.pages
         }
-        let pages = Paginator(capacity: capacity).paginate(chapter.text)
+
+        // Layout-accurate breaks: fill real TextKit containers with the same
+        // attributed string the page renders, so every non-final page is
+        // visually full and facing pages bottom out together. The 4pt shave
+        // absorbs sub-point engine differences between the measurement pass
+        // and the live text view — a hair under-full is invisible; one line
+        // over would clip.
+        let paginator = LayoutPaginator(style: style, inlineImages: inlineImages)
+        var pages = paginator.paginate(chapter.text) { index in
+            // The kicker renders on each spread's FIRST page (every page in
+            // single-page layout; even indices in double, since spreads
+            // start on even indices).
+            let showsKicker = hasKicker
+                && (layout != .doublePage || index.isMultiple(of: 2))
+            let height = pageHeight - (showsKicker ? Self.kickerAllowance : 0) - 4
+            return CGSize(width: textWidth, height: max(1, height))
+        }
+        if pages.isEmpty, !chapter.text.isEmpty {
+            // Measurement couldn't cover the text (degenerate geometry, an
+            // attachment taller than a page): estimate-based fallback keeps
+            // the reader functional.
+            pages = Paginator(capacity: capacity(for: size)).paginate(chapter.text)
+        }
         cache.chapterID = chapter.id
-        cache.capacity = capacity
+        cache.key = key
         cache.pages = pages
         // Suffix-sum per-page word counts (pages break on whitespace, so the
         // sum matches counting the chapter once). One O(chapter) pass here
@@ -242,11 +278,11 @@ struct PagedChapterView: View {
         )
     }
 
-    /// Conservative characters-per-page estimate from geometry + the reader
-    /// style's font size, so pages reflow when the user changes text size.
-    /// Read from the SAME instance properties the body renders with — the
-    /// measure cap, page insets, bottom label band, and first-page kicker — so
-    /// the estimate can't drift from the laid-out page.
+    /// FALLBACK ONLY (see `paginate(for:)`): conservative characters-per-page
+    /// estimate from geometry + font size, used when `LayoutPaginator` can't
+    /// measure (degenerate geometry, an attachment taller than a page). The
+    /// primary path breaks pages by real TextKit layout so pages are
+    /// visually full; this estimate under-fills but never overflows.
     private func capacity(for size: CGSize) -> Int {
         let pointSize = style.fontSize
         // Per-column text width: the body caps each column at `measure` and
