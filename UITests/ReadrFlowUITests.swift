@@ -272,6 +272,32 @@ final class ReadrFlowUITests: XCTestCase {
         )
     }
 
+    // Scroll mode has no pages, but a horizontal flick must still cross
+    // chapters (left → next, right → previous) — the paged layouts already
+    // flow across chapter walls on swipe, and scroll mode (the default)
+    // offering no swipe at all reads as broken navigation.
+    func testScrollModeSwipeCrossesChapters() {
+        let app = launchSeeded()
+        openSampleBook(app)
+        selectLayout(app, "Scroll")
+
+        let text = app.textViews.firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Chapter One"].waitForExistence(timeout: 5))
+
+        text.swipeLeft()
+        XCTAssertTrue(
+            app.staticTexts["Chapter Two"].waitForExistence(timeout: 5),
+            "A left flick in scroll mode should advance to the next chapter"
+        )
+
+        text.swipeRight()
+        XCTAssertTrue(
+            app.staticTexts["Chapter One"].waitForExistence(timeout: 5),
+            "A right flick in scroll mode should return to the previous chapter"
+        )
+    }
+
     // MARK: - J3: highlight from selection
 
     // Core annotate gesture: select text in the reading surface, tap a color

@@ -279,6 +279,17 @@ struct ReaderView: View {
                     },
                     onSelectionChange: { currentSelection.value = $0 }
                 )
+                // Scroll mode has no pages, but a horizontal flick still
+                // crosses chapters — the paged layouts flow across chapter
+                // walls on swipe, and the default layout offering no swipe
+                // at all reads as broken navigation.
+                .modifier(ChapterSwipe { direction in
+                    if direction > 0, chapterIndex < book.chapters.count - 1 {
+                        jump(toChapter: chapterIndex + 1, offset: 0)
+                    } else if direction < 0, chapterIndex > 0 {
+                        jump(toChapter: chapterIndex - 1, offset: 0)
+                    }
+                })
                 scrollFooter(for: chapter)
             } else {
                 // Paged modes draw their own footer (progress track + page x
@@ -1032,6 +1043,36 @@ struct ReaderView: View {
 /// an in-flight touch (see the `currentSelection` doc in `ReaderView`).
 final class SelectionMirror {
     var value: Range<Int>?
+}
+
+// MARK: - Chapter swipe (scroll mode)
+
+/// Scroll mode's chapter-crossing flick: left → next chapter, right →
+/// previous. The text view's own pan owns vertical scrolling, so this rides
+/// `simultaneousGesture` and fires only on decisive horizontal flicks — the
+/// same dominance + velocity thresholds as the paged `SwipeToTurn`, so
+/// vertical scrolls and near-stationary selection-handle drags never
+/// trigger. iOS-only: on macOS a pointer drag over text IS selection, and
+/// trackpad swipes belong to the paged surface's event monitor.
+private struct ChapterSwipe: ViewModifier {
+    let onSwipe: (Int) -> Void
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.simultaneousGesture(
+            DragGesture(minimumDistance: 40)
+                .onEnded { value in
+                    let h = value.translation.width
+                    let v = value.translation.height
+                    guard abs(h) > abs(v) * 1.2,
+                          abs(value.velocity.width) > 220 else { return }
+                    onSwipe(h < 0 ? +1 : -1)
+                }
+        )
+        #else
+        content
+        #endif
+    }
 }
 
 // MARK: - Shortcut-only buttons
