@@ -69,8 +69,7 @@ final class LayoutPaginatorTests: XCTestCase {
     /// line box of this.)
     private var fillQuantum: CGFloat {
         let lineBox = style.fontSize * 1.2 + style.lineSpacing
-        let paragraphSpacing = style.fontSize * 0.6
-        return lineBox * 2 + paragraphSpacing * 2 + 4
+        return lineBox * 2 + style.paragraphSpacing * 2 + 4
     }
 
     // MARK: - Contract
