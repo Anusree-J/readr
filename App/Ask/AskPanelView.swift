@@ -44,7 +44,7 @@ struct AskPanelView: View {
                     ContentUnavailableView {
                         Label("No AI provider connected", systemImage: "sparkles")
                     } description: {
-                        Text("Add an API key, sign in, or pick a local model to ask questions.")
+                        Text(SettingsModel.setupGuidance(toDo: "ask questions"))
                     } actions: {
                         Button {
                             showProviders = true
