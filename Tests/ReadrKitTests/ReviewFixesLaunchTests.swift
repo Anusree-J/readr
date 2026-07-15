@@ -276,14 +276,96 @@ final class ReviewFixesLaunchTests: XCTestCase {
         XCTAssertEqual(readyState, .active)
         XCTAssertTrue(readyManager.isConfigured(.local))
 
-        // Server down → local is no longer treated as configured.
+        // Server down → transient .unavailable (recovers when Ollama restarts),
+        // so it's not "verified ready" but must NOT be condemned as .invalid.
         let down = MockHTTPClient()
         down.sendHandler = { _ in throw URLError(.cannotConnectToHost) }
         let downManager = makeManager(store: store, http: down)
         let state = await downManager.validate(.local)
-        guard case .invalid = state else {
-            return XCTFail("expected .invalid for down server, got \(state)")
+        guard case .unavailable = state else {
+            return XCTFail("expected .unavailable for down server, got \(state)")
         }
-        XCTAssertFalse(downManager.isConfigured(.local), "down Ollama must not count as configured")
+        XCTAssertFalse(downManager.isConfigured(.local), "down Ollama must not count as verified-ready")
+    }
+
+    // MARK: - Transient failures stay optimistic; in-flight race is guarded
+
+    /// A transient remote failure (offline/timeout, 429, 5xx) must NOT condemn
+    /// a stored key: it maps to `.unavailable`, and `activeProvider()` still
+    /// resolves so Ask recovers once the network/provider is back.
+    func testTransientRemoteFailureDoesNotPoisonActiveProvider() async throws {
+        for scripted: @Sendable (HTTPRequest) throws -> HTTPResponse in [
+            { _ in throw URLError(.timedOut) },
+            { _ in HTTPResponse(status: 429) },
+            { _ in HTTPResponse(status: 503) },
+        ] {
+            let store = FakeCredentialStore()
+            try store.save(.apiKey("sk-maybe-good"), for: .openAI)
+            let mock = MockHTTPClient()
+            mock.sendHandler = scripted
+            let manager = makeManager(store: store, http: mock)
+            manager.setActive(kind: .openAI)
+
+            let state = await manager.validate(.openAI)
+            guard case .unavailable = state else {
+                return XCTFail("expected .unavailable for transient failure, got \(state)")
+            }
+            XCTAssertNotNil(
+                try manager.activeProvider(),
+                "a transient failure must leave the stored key optimistically usable"
+            )
+        }
+    }
+
+    /// A 401 during validation is a genuine rejection → `.invalid`, which DOES
+    /// block `activeProvider()` (contrast with the transient case above).
+    func testAuthRejectionPoisonsButTransientDoesNot() async throws {
+        let store = FakeCredentialStore()
+        try store.save(.apiKey("sk-bad"), for: .openAI)
+        let mock = MockHTTPClient()
+        mock.sendHandler = { _ in HTTPResponse(status: 401) }
+        let manager = makeManager(store: store, http: mock)
+        manager.setActive(kind: .openAI)
+
+        let state = await manager.validate(.openAI)
+        guard case .invalid = state else {
+            return XCTFail("expected .invalid for 401, got \(state)")
+        }
+        XCTAssertThrowsError(try manager.activeProvider())
+    }
+
+    /// A stale in-flight `validate` that finishes after `clearValidation` (the
+    /// user replaced the key) must not overwrite the fresh never-checked state.
+    func testStaleValidationDoesNotOverwriteAfterClear() async throws {
+        let store = FakeCredentialStore()
+        try store.save(.apiKey("sk-old-bad"), for: .openAI)
+
+        // Gate the validate() network call so we can interleave a clearValidation
+        // between its .validating entry and its result commit.
+        let release = XCTestExpectation(description: "release scripted response")
+        let entered = XCTestExpectation(description: "handler entered")
+        let mock = MockHTTPClient()
+        mock.sendHandler = { _ in
+            entered.fulfill()
+            XCTWaiter().wait(for: [release], timeout: 5)
+            return HTTPResponse(status: 401) // old key was bad
+        }
+        let manager = makeManager(store: store, http: mock)
+        manager.setActive(kind: .openAI)
+
+        async let stale = manager.validate(.openAI)
+        await fulfillment(of: [entered], timeout: 2)
+
+        // User replaces the key mid-flight; clearing bumps the generation.
+        try store.save(.apiKey("sk-new-good"), for: .openAI)
+        manager.clearValidation(.openAI)
+
+        release.fulfill()
+        _ = await stale
+
+        // The stale 401 result must have been discarded, leaving the fresh
+        // never-checked state — so activeProvider() still resolves the new key.
+        XCTAssertNil(manager.validationState(.openAI), "stale result must not land")
+        XCTAssertNotNil(try manager.activeProvider())
     }
 }

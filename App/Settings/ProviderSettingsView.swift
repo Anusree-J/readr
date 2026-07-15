@@ -297,6 +297,19 @@ struct ProviderSettingsView: View {
                 showsSpinner: false,
                 isActive: false
             )
+        case let .unavailable(reason):
+            // A transient failure (offline, rate-limit, provider outage, local
+            // server down). The credential may still be good, so use a soft
+            // amber "temporarily unavailable" tone rather than the red reject
+            // style — Ask still tries optimistically and recovers on its own.
+            return CardStatus(
+                kindRawValue: kind.rawValue,
+                text: reason ?? "Temporarily unavailable",
+                textColor: .orange,
+                dotColor: .orange.opacity(0.85),
+                showsSpinner: false,
+                isActive: false
+            )
         case .none:
             // Never validated this session: fall back to the stored-key
             // heuristic. Configured shows a neutral "Connected" until a live
