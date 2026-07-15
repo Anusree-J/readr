@@ -77,6 +77,12 @@ final class AppModel: ObservableObject {
     }
 
     private static func makeCredentialStore() -> any CredentialStore {
+        // `-uiTestInMemoryCredentials`: keep the Ask refresh-on-connect UI test
+        // (A1) off the real Keychain — deterministic and leak-free — while
+        // still exercising the genuine save → activate → resolve path.
+        if ProcessInfo.processInfo.arguments.contains("-uiTestInMemoryCredentials") {
+            return InMemoryCredentialStore()
+        }
         #if canImport(Security)
         return KeychainCredentialStore()
         #else

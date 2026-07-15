@@ -210,6 +210,7 @@ private struct APIKeyField: View {
                 .padding(.horizontal, 10)
                 .background(theme.paper, in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.line, lineWidth: 1))
+                .accessibilityIdentifier("settings.apiKey.\(kind.rawValue)")
             Button {
                 onSave(key)
                 key = ""
@@ -224,6 +225,7 @@ private struct APIKeyField: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Save API key")
+            .accessibilityIdentifier("settings.saveKey.\(kind.rawValue)")
             .disabled(!canSave)
         }
     }
