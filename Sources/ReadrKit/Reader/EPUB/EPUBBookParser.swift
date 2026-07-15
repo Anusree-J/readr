@@ -6,6 +6,11 @@ import Foundation
 /// `encryption.xml`) are rejected. Dependency-free and fully unit-tested; the
 /// app target supplies a ZIP-backed container.
 public struct EPUBBookParser {
+    /// Maximum number of spine items honored. A hostile package can declare
+    /// hundreds of thousands of itemrefs to exhaust memory/CPU before any
+    /// entry is even extracted; reject the book past this ceiling.
+    public static let maxSpineItems = 2000
+
     public init() {}
 
     public func parse(container: EPUBContainer, fallbackTitle: String) throws -> Book {
@@ -33,6 +38,9 @@ public struct EPUBBookParser {
         // the main reading flow but keep their content — appended after the
         // linear chapters rather than interleaved or dropped.
         let orderedSpine = opf.spineItems.filter { $0.linear } + opf.spineItems.filter { !$0.linear }
+        guard orderedSpine.count <= Self.maxSpineItems else {
+            throw EPUBParseError.tooManySpineItems(count: orderedSpine.count, limit: Self.maxSpineItems)
+        }
         var chapters: [Chapter] = []
         var chapterIndexByPath: [String: Int] = [:]
         for entry in orderedSpine {
