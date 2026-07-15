@@ -182,6 +182,138 @@ final class ReadrAppUITests: XCTestCase {
         )
     }
 
+    // MARK: - Ask the book (A1 / A5 / A4)
+
+    /// Open Sample Book and its Ask panel, driving through the seeded library.
+    /// Returns the launched app so callers can keep asserting.
+    private func openAskPanel(_ app: XCUIApplication) {
+        let bookCell = app.staticTexts["Sample Book"].firstMatch
+        XCTAssertTrue(bookCell.waitForExistence(timeout: 10))
+        bookCell.tap()
+        XCTAssertTrue(app.staticTexts["Chapter One"].waitForExistence(timeout: 10))
+        let ask = button(app, id: "reader.ask", label: "Ask the book")
+        XCTAssertTrue(ask.waitForExistence(timeout: 5))
+        ask.tap()
+        XCTAssertTrue(app.navigationBars["Ask the book"].waitForExistence(timeout: 5))
+    }
+
+    // A1 — the Ask panel refreshes after a key is saved from its own empty
+    // state: no app restart, the guidance gives way to the ask UI. Launched
+    // WITHOUT -uiTestStubLLM so the provider-less empty state renders, and
+    // with an in-memory credential store so the save stays off the Keychain.
+    func testAskPanelRefreshesAfterConnectingProvider() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTestSeed", "-uiTestInMemoryCredentials"]
+        app.launch()
+
+        openAskPanel(app)
+
+        // Empty state: no provider yet.
+        XCTAssertTrue(
+            app.staticTexts["No AI provider connected"].waitForExistence(timeout: 5),
+            "Ask panel should start in the connect-a-provider empty state"
+        )
+
+        // Route to provider settings from the empty state's action button.
+        app.buttons["Open AI Providers"].firstMatch.tap()
+        XCTAssertTrue(
+            app.navigationBars["AI Providers"].waitForExistence(timeout: 5)
+            || app.staticTexts["AI Providers"].waitForExistence(timeout: 5)
+        )
+
+        // Save an Anthropic key, then dismiss the sheet.
+        let keyField = app.secureTextFields["settings.apiKey.anthropic"].firstMatch
+        XCTAssertTrue(keyField.waitForExistence(timeout: 5))
+        keyField.tap()
+        keyField.typeText("sk-ant-uitest-key")
+        app.buttons["settings.saveKey.anthropic"].firstMatch.tap()
+        app.navigationBars.buttons["Done"].firstMatch.tap()
+
+        // Back in the Ask panel: onDismiss re-resolved the provider, so the
+        // empty state is gone and the ask input is present — no relaunch.
+        XCTAssertTrue(
+            app.buttons["ask.send"].waitForExistence(timeout: 5),
+            "Ask panel should refresh out of the empty state after a key is saved"
+        )
+        XCTAssertFalse(
+            app.staticTexts["No AI provider connected"].exists,
+            "The empty-state guidance should be gone once a provider is connected"
+        )
+    }
+
+    // A5 — an ask failure surfaces the mapped, actionable error sentence and a
+    // Retry that re-runs the same question. -uiTestStubError makes the stub
+    // fail the stream with a transport timeout that HTTPError maps to a plain
+    // sentence.
+    func testAskErrorShowsActionableMessageAndRetry() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTestSeed", "-uiTestStubLLM", "-uiTestStubError"]
+        app.launch()
+
+        openAskPanel(app)
+
+        let suggestion = app.buttons["Summarize this book"].firstMatch
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 5))
+        suggestion.tap()
+        let send = app.buttons["ask.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 3))
+        send.tap()
+
+        // Mapped HTTPError sentence, not Foundation's generic message.
+        XCTAssertTrue(
+            app.staticTexts["The request to the provider timed out."]
+                .waitForExistence(timeout: 10),
+            "The error state should show the mapped, actionable sentence"
+        )
+        let retry = app.buttons["ask.retry"].firstMatch
+        XCTAssertTrue(retry.waitForExistence(timeout: 3), "A Retry affordance should appear on error")
+
+        // Retry re-runs the same question — the error card reappears (the stub
+        // still fails), proving the retry re-invoked the ask.
+        let errorCard = app.otherElements["ask.error"].firstMatch
+        XCTAssertTrue(errorCard.waitForExistence(timeout: 3))
+        retry.tap()
+        XCTAssertTrue(
+            app.staticTexts["The request to the provider timed out."]
+                .waitForExistence(timeout: 10),
+            "Retry should re-run the same question and surface the error again"
+        )
+    }
+
+    // A4 — a whole-book answer shows the honest no-citations copy and never a
+    // Sources list. -uiTestStubWholeBook makes the stub report a remote model
+    // so the small seeded book routes to the whole-book tier.
+    func testAskWholeBookShowsHonestNoCitationsCopy() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTestSeed", "-uiTestStubLLM", "-uiTestStubWholeBook"]
+        app.launch()
+
+        openAskPanel(app)
+
+        let suggestion = app.buttons["Summarize this book"].firstMatch
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 5))
+        suggestion.tap()
+        let send = app.buttons["ask.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 3))
+        send.tap()
+
+        // Wait for the stub's streamed tail phrase, then assert the honest
+        // whole-book footer and the absence of a fabricated Sources list.
+        _ = app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS %@", "tone of decay")
+        ).firstMatch.waitForExistence(timeout: 15)
+
+        XCTAssertTrue(
+            app.staticTexts["USING THE WHOLE BOOK"].waitForExistence(timeout: 5)
+            || app.otherElements["ask.wholeBookNote"].waitForExistence(timeout: 5),
+            "Whole-book answers should show the honest no-citations note"
+        )
+        XCTAssertFalse(
+            app.staticTexts["SOURCES"].exists,
+            "The whole-book tier must not promise a Sources list"
+        )
+    }
+
     // MARK: - Screenshots for CI
 
     /// Attaches a full-screen PNG to the test result bundle so CI can extract
