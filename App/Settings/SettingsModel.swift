@@ -108,12 +108,19 @@ final class SettingsModel: ObservableObject {
     /// Kick off (or refresh) validation for a kind and mirror the result:
     /// remote keys get a lightweight authenticated probe, Local hits Ollama's
     /// `api/tags`. `validation[kind]` flips to `.validating` immediately so the
-    /// card can show a spinner, then to `.active`/`.invalid` when it settles.
+    /// card can show a spinner, then settles to `.active` (verified),
+    /// `.invalid` (rejected key), or `.unavailable` (transient — offline,
+    /// rate-limited, provider/Ollama down).
     func validate(_ kind: ProviderInfo.Kind) async {
         guard !skipValidation else { return }
         validation[kind] = .validating
-        let state = await manager.validate(kind)
-        validation[kind] = state
+        _ = await manager.validate(kind)
+        // Re-read the manager's authoritative state rather than the call's
+        // return value: if the credential changed mid-flight (the user saved a
+        // new key), this run's result was discarded and the manager now holds
+        // the fresh state (often nil) — mirroring the return value would land a
+        // stale result in the published map.
+        validation[kind] = manager.validationState(kind)
         configured[kind] = manager.isConfigured(kind)
     }
 

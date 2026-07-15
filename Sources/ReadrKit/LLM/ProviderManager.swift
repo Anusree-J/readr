@@ -219,8 +219,10 @@ public final class ProviderManager: @unchecked Sendable {
     ///
     /// The state moves through `.validating` while the request is in flight so
     /// the UI can show a spinner. If the credential/selection changes while the
-    /// check is running (generation bump), the result is discarded and the
-    /// now-current state is returned instead. Returns the resulting state.
+    /// check is running (generation bump), the result is discarded — it is NOT
+    /// written to the stored state. The returned value is best-effort in that
+    /// case; callers that must reflect the committed state should re-read
+    /// `validationState(_:)` after awaiting (as `SettingsModel.validate` does).
     @discardableResult
     public func validate(_ kind: ProviderInfo.Kind) async -> ValidationState {
         let token = beginValidation(for: kind)
