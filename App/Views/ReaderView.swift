@@ -213,9 +213,35 @@ struct ReaderView: View {
                         }
                         #endif
                     },
-                    // Jumping to a PDF page needs a page binding into
-                    // PDFReaderView; v2 ships without one.
-                    onJumpPDF: nil,
+                    // R1: a PDF note jumps to its page through the same funnel
+                    // the on-page bookmarks/outline use — the controller's
+                    // goToPage, published up via `pdfAnnotationActions` while
+                    // the native PDF surface is mounted.
+                    onJumpPDF: { highlight in
+                        pdfAnnotationActions?.goToPage(highlight.pageIndex)
+                        // iPhone: the inspector covers the page as a sheet —
+                        // close it so the jump is visible, mirroring the text
+                        // path above. iPad/macOS side columns stay open.
+                        #if os(iOS)
+                        if UIDevice.current.userInterfaceIdiom == .phone {
+                            showNotes = false
+                        }
+                        #endif
+                    },
+                    // R2: recolor/delete of a PDF highlight from the Notes
+                    // list must reconcile the live PDFKit overlay, not just the
+                    // store — route through the controller (via the published
+                    // actions) so the on-page paint matches after the edit.
+                    onRecolorPDF: pdfAnnotationActions.map { actions in
+                        { (highlight: PDFHighlight, color: HighlightColor) in
+                            actions.recolorHighlight(highlight, color)
+                        }
+                    },
+                    onDeletePDF: pdfAnnotationActions.map { actions in
+                        { (highlight: PDFHighlight) in
+                            actions.removeHighlight(highlight)
+                        }
+                    },
                     onClose: { showNotes = false }
                 )
                 .inspectorColumnWidth(min: 280, ideal: 340, max: 480)

@@ -16,6 +16,16 @@ struct PDFAnnotationActions {
     /// The Ask `Selection` for the current PDF selection; nil ⇒ nothing
     /// selected (callers fall back to a whole-book ask).
     var askSelection: () -> Selection?
+    /// Navigate the live PDF to a page (R1: Notes-list "Show in book" jumps a
+    /// PDF annotation to its page, mirroring the text reader's chapter jump).
+    var goToPage: (Int) -> Void
+    /// Recolor a stored PDF highlight AND its live PDFKit overlay in one step
+    /// (R2: a Notes-list color change must repaint the page, not just the
+    /// store). No-op on the page when the highlight isn't currently overlaid.
+    var recolorHighlight: (PDFHighlight, HighlightColor) -> Void
+    /// Remove a stored PDF highlight AND its live PDFKit overlay (R2: a
+    /// Notes-list delete must clear the on-page paint, not leave it stranded).
+    var removeHighlight: (PDFHighlight) -> Void
 }
 
 #if canImport(PDFKit)
@@ -62,7 +72,10 @@ struct PDFReaderView: View {
                 annotationActions = PDFAnnotationActions(
                     highlightSelection: { controller.highlightCurrentSelection() },
                     noteSelection: { controller.noteCurrentSelection() },
-                    askSelection: { controller.askCurrentSelection() }
+                    askSelection: { controller.askCurrentSelection() },
+                    goToPage: { controller.goToPage($0) },
+                    recolorHighlight: { controller.recolorHighlight($0, to: $1) },
+                    removeHighlight: { controller.removeHighlight($0) }
                 )
             }
             .onDisappear {

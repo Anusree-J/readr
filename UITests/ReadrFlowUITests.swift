@@ -667,4 +667,149 @@ final class ReadrFlowUITests: XCTestCase {
 
         selectLayout(app, "Scroll")
     }
+
+    // MARK: - PDF Notes parity (R1 / R2 / R4)
+
+    /// Opens the seeded "Field Notes" PDF from Home and waits for the native
+    /// PDFKit reader (the page indicator proves the document loaded). The
+    /// fixture is 2 pages with one seeded PDF highlight on page 2.
+    private func openFieldNotesPDF(_ app: XCUIApplication) {
+        let pdfButton = app.buttons["Field Notes"].firstMatch
+        let pdfCard = pdfButton.waitForExistence(timeout: 10)
+            ? pdfButton
+            : app.staticTexts["Field Notes"].firstMatch
+        XCTAssertTrue(pdfCard.waitForExistence(timeout: 5), "The seeded PDF should be on the shelf")
+        if !pdfCard.isHittable { app.swipeUp() }
+        pdfCard.tap()
+        XCTAssertTrue(
+            app.staticTexts["pdf.pageIndicator"].firstMatch.waitForExistence(timeout: 15),
+            "The native PDF reader should show its page indicator"
+        )
+    }
+
+    // R1 — tapping a PDF note in the Notes list jumps the PDF to that
+    // annotation's page. The seeded highlight lives on page 2, so after the
+    // jump the page indicator must read "Page 2 of 2" (it opens on page 1).
+    func testPDFNoteJumpsToItsPage() {
+        let app = launchSeeded()
+        openFieldNotesPDF(app)
+
+        let indicator = app.staticTexts["pdf.pageIndicator"].firstMatch
+        XCTAssertTrue(
+            indicator.label.hasPrefix("Page 1 of 2"),
+            "A freshly opened PDF starts on page 1 (got: \(indicator.label))"
+        )
+
+        let notes = button(app, id: "reader.notes", label: "Highlights")
+        XCTAssertTrue(notes.waitForExistence(timeout: 5))
+        notes.tap()
+
+        // The seeded PDF highlight's quote appears as its own row (its raw
+        // text is the card's accessibility label).
+        XCTAssertTrue(
+            app.staticTexts["the gaps speak loudest"].firstMatch.waitForExistence(timeout: 5),
+            "The Notes list should show the seeded PDF highlight"
+        )
+
+        // "Show in book" jumps to the highlight's page (and, on iPhone, closes
+        // the covering inspector so the page is visible again).
+        let showInBook = app.buttons["notes.showInBook"].firstMatch
+        XCTAssertTrue(
+            showInBook.waitForExistence(timeout: 5),
+            "A PDF note must offer a jump-to-page control (R1)"
+        )
+        showInBook.tap()
+
+        XCTAssertTrue(
+            indicator.waitForExistence(timeout: 5),
+            "The PDF page should be visible again after the jump"
+        )
+        // The seeded highlight is on page 2, so the jump must land there.
+        XCTAssertTrue(
+            NSPredicate(format: "label BEGINSWITH 'Page 2 of 2'").evaluate(with: indicator),
+            "Tapping the PDF note should navigate to its page (got: \(indicator.label))"
+        )
+    }
+
+    // R2 — deleting a PDF highlight from the Notes list removes it from the
+    // store AND (in-app) from the live PDFKit overlay. XCUITest can't inspect
+    // PDFKit's rendered paint, so this asserts the list-side outcome (the
+    // annotation is gone, the empty state appears); the overlay-reconciliation
+    // itself is code-review + macOS snapshot verified.
+    func testDeletePDFHighlightFromNotesListRemovesIt() {
+        let app = launchSeeded()
+        openFieldNotesPDF(app)
+
+        let notes = button(app, id: "reader.notes", label: "Highlights")
+        XCTAssertTrue(notes.waitForExistence(timeout: 5))
+        notes.tap()
+
+        let quote = app.staticTexts["the gaps speak loudest"].firstMatch
+        XCTAssertTrue(
+            quote.waitForExistence(timeout: 5),
+            "The Notes list should show the seeded PDF highlight before deletion"
+        )
+
+        // Trailing swipe reveals Delete; the seeded book has exactly one PDF
+        // highlight, so after deletion the empty state replaces the list.
+        quote.swipeLeft()
+        let del = app.buttons["Delete"].firstMatch
+        if del.waitForExistence(timeout: 3), del.isHittable {
+            del.tap()
+        } else {
+            // Fallback: context menu → Delete Highlight (long-press the card).
+            quote.press(forDuration: 1.0)
+            let delItem = app.buttons["Delete Highlight"].firstMatch
+            if delItem.waitForExistence(timeout: 3) { delItem.tap() }
+        }
+
+        XCTAssertTrue(
+            app.staticTexts["No highlights yet"].firstMatch.waitForExistence(timeout: 5)
+                || quote.waitForNonExistence(timeout: 5),
+            "Deleting the only PDF highlight should clear it from the Notes list (R2)"
+        )
+    }
+
+    // R4 — the per-book "Highlights & Notes" context menu must open the
+    // INVOKED book, not fall back to the first annotated one. Long-presses the
+    // "Field Notes" (PDF) cover in the library grid and asserts the review
+    // opens on Field Notes' annotations — its seeded PDF highlight's quote is
+    // unique to that book, so it proves the right book was routed.
+    func testPerBookNotesContextMenuOpensInvokedBook() throws {
+        let app = launchSeeded()
+
+        // Reach a library grid (context menus live on grid cells, not Home's
+        // Recently Added row). From Home, pop to the sidebar and open PDFs so
+        // the grid shows Field Notes as the sole cell.
+        _ = app.staticTexts["Sample Book"].firstMatch.waitForExistence(timeout: 10)
+        let back = app.buttons["Readr"].firstMatch
+        if back.waitForExistence(timeout: 3), back.isHittable { back.tap() }
+        let pdfsCell = app.cells["sidebar.pdfs"].firstMatch
+        let pdfs = pdfsCell.exists ? pdfsCell : app.staticTexts["PDFs"].firstMatch
+        guard pdfs.waitForExistence(timeout: 5), pdfs.isHittable else {
+            throw XCTSkip("Could not reach the PDFs shelf on this simulator idiom")
+        }
+        pdfs.tap()
+
+        // The grid cell is a button labeled by title. Long-press to raise the
+        // per-book context menu.
+        let cell = app.buttons["Field Notes"].firstMatch
+        XCTAssertTrue(cell.waitForExistence(timeout: 5), "Field Notes should be on the PDF shelf")
+        cell.press(forDuration: 1.0)
+
+        let notesItem = labeled(app.buttons, contains: "Highlights & Notes")
+        XCTAssertTrue(
+            notesItem.waitForExistence(timeout: 5),
+            "The per-book context menu should offer Highlights & Notes"
+        )
+        notesItem.tap()
+
+        // The review must open on Field Notes — its seeded PDF highlight quote
+        // is unique to it (Sample Book, the first annotated book, has no such
+        // text), so its presence proves the invoked book was routed (R4).
+        XCTAssertTrue(
+            app.staticTexts["the gaps speak loudest"].firstMatch.waitForExistence(timeout: 8),
+            "The per-book menu must open the invoked book's annotations, not the first annotated book (R4)"
+        )
+    }
 }

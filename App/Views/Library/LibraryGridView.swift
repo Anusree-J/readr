@@ -17,8 +17,10 @@ struct LibraryGridView: View {
     /// pick the right empty state.
     let query: String
     let openBook: (Book) -> Void
-    /// Switches the shell's sidebar selection to Highlights & Notes.
-    let showNotes: () -> Void
+    /// Switches the shell's sidebar selection to Highlights & Notes, opening
+    /// the passed book's annotations (R4: the per-book context menu must open
+    /// the invoked book, not fall back to the first annotated one).
+    let showNotes: (Book) -> Void
     @Binding var isImporting: Bool
     @Binding var showSettings: Bool
 
@@ -359,7 +361,7 @@ struct LibraryGridView: View {
             }
         }
         Button {
-            showNotes()
+            showNotes(book)
         } label: {
             Label("Highlights & Notes", systemImage: "highlighter")
         }

@@ -250,6 +250,21 @@ final class AppModel: ObservableObject {
         // scrolling — stateless books sort to the end of `recentlyAdded`,
         // which would push the PDF below the fold on a phone.
         try? store.saveBookState(BookState(addedAt: Date()), for: book.id)
+
+        // A native-PDF highlight on page 2 (with a note) so the Notes list has
+        // a PDF annotation to review: exercises the jump-to-page path (R1) and
+        // the overlay-reconciling edit/delete (R2) in the UI tests. Page-space
+        // rect sits in the text block of the 612×792 page (72pt margins).
+        let now = Date()
+        try? store.addPDFHighlight(PDFHighlight(
+            bookID: book.id,
+            pageIndex: 1,
+            lineRects: [PDFRect(x: 72, y: 690, width: 468, height: 20)],
+            quotedText: "the gaps speak loudest",
+            color: .yellow,
+            note: "Come back to this next season.",
+            createdAt: now
+        ))
     }
 
     /// Character-offset range of `phrase` in `text`. Highlights address
