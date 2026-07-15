@@ -27,6 +27,12 @@ struct LibraryShellView: View {
     /// Start on Home so a collapsed (iPhone) split view lands on content, not
     /// the bare sidebar list.
     @State private var selection: LibrarySidebarItem? = .home
+    /// R4: the book the per-book "Highlights & Notes" context menu invoked, so
+    /// the review opens on that book rather than the first annotated one. Starts
+    /// nil — the review then defaults to the first annotated book — and the
+    /// review also falls back to the first book whenever this id no longer names
+    /// an annotated book (e.g. after that book is deleted).
+    @State private var selectedNotesBookID: UUID?
     @State private var query = ""
     @State private var isImporting = false
     @State private var showSettings = false
@@ -317,7 +323,7 @@ struct LibraryShellView: View {
                     books: model.books.filter { model.bookState(for: $0)?.isFinished == true }
                 )
             case .notes:
-                LibraryNotesView()
+                LibraryNotesView(selectedBookID: $selectedNotesBookID)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -340,7 +346,10 @@ struct LibraryShellView: View {
             books: searchFiltered(books),
             query: trimmedQuery,
             openBook: open,
-            showNotes: { selection = .notes },
+            showNotes: { book in
+                selectedNotesBookID = book.id
+                selection = .notes
+            },
             isImporting: $isImporting,
             showSettings: $showSettings
         )

@@ -14,6 +14,12 @@ struct NotesPanel: View {
     let book: Book
     var onJumpHighlight: ((Highlight) -> Void)? = nil
     var onJumpPDF: ((PDFHighlight) -> Void)? = nil
+    /// R2: recolor/delete of a PDF highlight routed through the PDF controller
+    /// so the live PDFKit overlay is reconciled, not just the store. Nil when
+    /// no native PDF surface is mounted (text mode / library review) — the
+    /// list then updates the store directly, which is correct with no overlay.
+    var onRecolorPDF: ((PDFHighlight, HighlightColor) -> Void)? = nil
+    var onDeletePDF: ((PDFHighlight) -> Void)? = nil
     /// Host-provided close action. On iPhone the inspector presents as a
     /// sheet whose only built-in exit is the drag grabber — a visible Done
     /// keeps dismissal discoverable. iPad/macOS side columns hide it (the
@@ -61,7 +67,9 @@ struct NotesPanel: View {
             AnnotationListView(
                 book: book,
                 onJumpHighlight: onJumpHighlight,
-                onJumpPDF: onJumpPDF
+                onJumpPDF: onJumpPDF,
+                onRecolorPDF: onRecolorPDF,
+                onDeletePDF: onDeletePDF
             )
         }
         .padding([.horizontal, .top], 12)
