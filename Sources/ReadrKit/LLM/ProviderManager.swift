@@ -132,8 +132,14 @@ public final class ProviderManager: @unchecked Sendable {
         let selection = ProviderSelection(kind: kind, modelID: resolvedModelID)
         lock.lock(); defer { lock.unlock() }
         // A model change (or reselection) invalidates any in-flight check for
-        // this kind — the result would describe the old model.
+        // this kind — the result would describe the old model. Bump the
+        // generation so that check is discarded, AND clear the cached state:
+        // otherwise, if a `.validating` check was in flight, discarding it would
+        // leave `.validating` stuck forever (nothing re-reads or replaces it),
+        // freezing the Settings card on "Validating…" and dropping the kind out
+        // of `isConfigured`. Reverting to nil keeps it optimistically usable.
         _validationGeneration[kind, default: 0] += 1
+        _validation[kind] = nil
         _selection = selection
         Self.save(selection, to: defaults)
     }

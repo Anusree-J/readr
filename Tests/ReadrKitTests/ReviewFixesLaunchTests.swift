@@ -368,4 +368,37 @@ final class ReviewFixesLaunchTests: XCTestCase {
         XCTAssertNil(manager.validationState(.openAI), "stale result must not land")
         XCTAssertNotNil(try manager.activeProvider())
     }
+
+    /// A model change (setActive) while a validation is in flight must not leave
+    /// the kind stuck in `.validating`: setActive bumps the generation AND
+    /// clears the cached state, so the discarded stale check doesn't freeze the
+    /// card on "Validating…" / drop it out of isConfigured.
+    func testModelChangeMidValidationDoesNotStickValidating() async throws {
+        let store = FakeCredentialStore()
+        try store.save(.apiKey("sk-good"), for: .openAI)
+
+        let release = XCTestExpectation(description: "release scripted response")
+        let entered = XCTestExpectation(description: "handler entered")
+        let mock = MockHTTPClient()
+        mock.sendHandler = { _ in
+            entered.fulfill()
+            XCTWaiter().wait(for: [release], timeout: 5)
+            return HTTPResponse(status: 200)
+        }
+        let manager = makeManager(store: store, http: mock)
+        manager.setActive(kind: .openAI, modelID: "gpt-4.1-mini")
+
+        async let stale = manager.validate(.openAI)
+        await fulfillment(of: [entered], timeout: 2)
+
+        // User switches model mid-flight — invalidates the in-flight check.
+        manager.setActive(kind: .openAI, modelID: "gpt-4.1")
+
+        release.fulfill()
+        _ = await stale
+
+        // State must NOT be stuck at .validating; it reverts to never-checked.
+        XCTAssertNil(manager.validationState(.openAI), "must not stick at .validating")
+        XCTAssertNotNil(try manager.activeProvider(), "provider still optimistically usable")
+    }
 }
