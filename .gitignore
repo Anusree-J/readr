@@ -14,7 +14,11 @@ App/Info.plist
 # Swift Package Manager
 .build/
 .swiftpm/
-Package.resolved
+# Package.resolved is intentionally NOT ignored: the Xcode workspace resolved
+# file (Readr.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved)
+# pins ZIPFoundation for reproducible CI/release builds and must be committed
+# from a Mac/CI run. Do NOT commit a Linux-generated root Package.resolved
+# (it can contain unrelated swift-crypto/swift-asn1 patch artifacts).
 
 # macOS
 .DS_Store
