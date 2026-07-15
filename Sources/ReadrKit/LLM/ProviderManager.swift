@@ -55,8 +55,9 @@ public final class ProviderManager: @unchecked Sendable {
     /// Lifecycle of a provider kind's readiness.
     ///
     /// For **remote** kinds a stored API key is not trusted until a lightweight
-    /// test call succeeds, so it moves `stored → validating → active` (or
-    /// `→ invalid` when the provider rejects it). For **local** the state is
+    /// test call succeeds, so it moves `validating → active` (or `→ invalid`
+    /// when the provider rejects it); before any check the state is simply
+    /// `nil` (never checked). For **local** the state is
     /// derived from an Ollama `probe()` (`active` when ready, `invalid` when the
     /// server is down or the model is missing).
     public enum ValidationState: Sendable, Equatable {
