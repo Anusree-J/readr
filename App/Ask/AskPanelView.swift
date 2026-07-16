@@ -178,8 +178,7 @@ struct AskPanelView: View {
 
             // The error card sits above the answer scroll region so its Retry
             // button stays within the visible area of the iPhone medium sheet
-            // detent (a greedy ScrollView below it would otherwise push the
-            // button past the fold, hiding it from the accessibility tree).
+            // detent, ahead of the answer/citations content.
             if let error = vm.errorMessage {
                 errorCard(error)
             }
@@ -269,6 +268,14 @@ struct AskPanelView: View {
             // question to re-run. (A prior `if vm.lastQuestion != nil` gate was
             // both redundant and, because `lastQuestion` isn't `@Published`,
             // risked dropping the button from the accessibility tree.)
+            //
+            // The button wraps a `Label` (text + icon). Unlike the `ask.send`
+            // button (which wraps a bare `Image`), the `Label` publishes its
+            // own combined child element, so the wrapper's identifier/button
+            // trait don't reliably land on a `.button`-typed element that
+            // `app.buttons["ask.retry"]` can match. Collapsing the button into
+            // a single accessibility leaf with an explicit button trait exposes
+            // it as one queryable Button labeled "Retry".
             Button(action: retry) {
                 Label("Retry", systemImage: "arrow.clockwise")
                     .font(.callout.weight(.semibold))
@@ -279,6 +286,8 @@ struct AskPanelView: View {
             }
             .buttonStyle(.plain)
             .disabled(vm.isStreaming)
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isButton)
             .accessibilityLabel("Retry")
             .accessibilityIdentifier("ask.retry")
         }
