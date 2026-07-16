@@ -97,6 +97,17 @@ final class MacSnapshotTests: XCTestCase {
         return rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
     }
 
+    /// Debug string of a color's sRGB 0…255 channels, for failure messages.
+    private func rgbString(_ color: NSColor?) -> String {
+        guard let c = color?.usingColorSpace(.sRGB) else { return "nil" }
+        return String(
+            format: "(%d,%d,%d)",
+            Int((c.redComponent * 255).rounded()),
+            Int((c.greenComponent * 255).rounded()),
+            Int((c.blueComponent * 255).rounded())
+        )
+    }
+
     /// Two colors are visually the same channel-wise within `tolerance` (0…1).
     private func colorsClose(
         _ lhs: NSColor?, _ rhs: NSColor?, tolerance: CGFloat = 0.05
@@ -251,19 +262,21 @@ final class MacSnapshotTests: XCTestCase {
                 XCTFail("pdf search (\(option.rawValue)): could not render")
                 continue
             }
-            // Bottom-left corner: below the centered empty-state text, so it is
-            // the popover's own elevated background.
-            XCTAssertTrue(
-                colorsClose(
-                    color(in: rep, atFractionX: 0.03, fractionY: 0.96),
-                    NSColor(option.elevated)
-                ),
-                "pdf search popover should use \(option.rawValue) elevated surface"
-            )
+            // Publish the render first so the PNG exists even when the assert
+            // below fails (setUp sets continueAfterFailure = false).
             snapshot(
                 PDFSearchView(controller: controller, onDismiss: {}),
                 size: CGSize(width: 360, height: 420),
                 name: "m09-pdf-search-\(option.rawValue)"
+            )
+            // Bottom-left corner: below the centered empty-state text, so it is
+            // the popover's own elevated background.
+            let sampled = color(in: rep, atFractionX: 0.03, fractionY: 0.96)
+            XCTAssertTrue(
+                colorsClose(sampled, NSColor(option.elevated)),
+                "pdf search popover should use \(option.rawValue) elevated surface "
+                    + "(sampled \(rgbString(sampled)), expected "
+                    + "\(rgbString(NSColor(option.elevated))))"
             )
         }
         UserDefaults.standard.removeObject(forKey: "readingTheme")
@@ -282,14 +295,21 @@ final class MacSnapshotTests: XCTestCase {
                 XCTFail("pdf outline (\(option.rawValue)): could not render")
                 continue
             }
+            // Publish the render first so the PNG exists even when the assert
+            // below fails (setUp sets continueAfterFailure = false).
+            snapshot(
+                PDFOutlineList(controller: controller, dismiss: {}),
+                size: CGSize(width: 260, height: 76),
+                name: "m09b-pdf-outline-\(option.rawValue)"
+            )
             // Top-left corner: clear of the centered "No table of contents"
             // label, so it is the popover's elevated background.
+            let sampled = color(in: rep, atFractionX: 0.03, fractionY: 0.04)
             XCTAssertTrue(
-                colorsClose(
-                    color(in: rep, atFractionX: 0.03, fractionY: 0.04),
-                    NSColor(option.elevated)
-                ),
-                "pdf outline popover should use \(option.rawValue) elevated surface"
+                colorsClose(sampled, NSColor(option.elevated)),
+                "pdf outline popover should use \(option.rawValue) elevated surface "
+                    + "(sampled \(rgbString(sampled)), expected "
+                    + "\(rgbString(NSColor(option.elevated))))"
             )
         }
         UserDefaults.standard.removeObject(forKey: "readingTheme")
