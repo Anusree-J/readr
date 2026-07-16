@@ -271,9 +271,17 @@ final class MacSnapshotTests: XCTestCase {
             )
             // Bottom-left corner: below the centered empty-state text, so it is
             // the popover's own elevated background.
+            //
+            // Tolerance is 0.08 (not the default 0.05): the popover PNG encodes
+            // the corner as the EXACT nominal elevated bytes in every theme, but
+            // `colorAt(...).usingColorSpace(.sRGB)` reinterprets the rep's native
+            // (device/P3) bytes into sRGB, which brightens near-black values. On
+            // the dark theme the read-back lands ~0.05 off on red — visually the
+            // exact surface, just past a 0.05 gate. 0.08 tolerates that while a
+            // reversion to a system material (~200/255) still fails by a mile.
             let sampled = color(in: rep, atFractionX: 0.03, fractionY: 0.96)
             XCTAssertTrue(
-                colorsClose(sampled, NSColor(option.elevated)),
+                colorsClose(sampled, NSColor(option.elevated), tolerance: 0.08),
                 "pdf search popover should use \(option.rawValue) elevated surface "
                     + "(sampled \(rgbString(sampled)), expected "
                     + "\(rgbString(NSColor(option.elevated))))"
@@ -303,10 +311,12 @@ final class MacSnapshotTests: XCTestCase {
                 name: "m09b-pdf-outline-\(option.rawValue)"
             )
             // Top-left corner: clear of the centered "No table of contents"
-            // label, so it is the popover's elevated background.
+            // label, so it is the popover's elevated background. Tolerance is
+            // 0.08 for the same dark-surface read-back reason documented in
+            // testPDFSearchPopoverThemedPerTheme.
             let sampled = color(in: rep, atFractionX: 0.03, fractionY: 0.04)
             XCTAssertTrue(
-                colorsClose(sampled, NSColor(option.elevated)),
+                colorsClose(sampled, NSColor(option.elevated), tolerance: 0.08),
                 "pdf outline popover should use \(option.rawValue) elevated surface "
                     + "(sampled \(rgbString(sampled)), expected "
                     + "\(rgbString(NSColor(option.elevated))))"
