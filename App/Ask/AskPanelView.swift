@@ -263,19 +263,24 @@ struct AskPanelView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if vm.lastQuestion != nil {
-                Button(action: retry) {
-                    Label("Retry", systemImage: "arrow.clockwise")
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(theme.background)
-                        .padding(.vertical, 9)
-                        .frame(maxWidth: .infinity)
-                        .background(theme.inkColor, in: RoundedRectangle(cornerRadius: 9))
-                }
-                .buttonStyle(.plain)
-                .disabled(vm.isStreaming)
-                .accessibilityIdentifier("ask.retry")
+            // Retry is always shown: `errorCard` only renders when
+            // `errorMessage` is set, and every path that sets it runs after
+            // `AskViewModel.ask` records `lastQuestion` — so there is always a
+            // question to re-run. (A prior `if vm.lastQuestion != nil` gate was
+            // both redundant and, because `lastQuestion` isn't `@Published`,
+            // risked dropping the button from the accessibility tree.)
+            Button(action: retry) {
+                Label("Retry", systemImage: "arrow.clockwise")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(theme.background)
+                    .padding(.vertical, 9)
+                    .frame(maxWidth: .infinity)
+                    .background(theme.inkColor, in: RoundedRectangle(cornerRadius: 9))
             }
+            .buttonStyle(.plain)
+            .disabled(vm.isStreaming)
+            .accessibilityLabel("Retry")
+            .accessibilityIdentifier("ask.retry")
         }
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)

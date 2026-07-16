@@ -276,9 +276,16 @@ final class ReadrAppUITests: XCTestCase {
     // state: no app restart, the guidance gives way to the ask UI. Launched
     // WITHOUT -uiTestStubLLM so the provider-less empty state renders, and
     // with an in-memory credential store so the save stays off the Keychain.
+    // -uiTestSkipProviderValidation keeps the saved key "Connected" offline:
+    // this test exercises the panel's refresh out of the empty state, not the
+    // authenticated probe. Without it the fake key is live-validated, rejected
+    // as .invalid, and activeProvider() refuses to resolve it — so the panel
+    // would never leave the "No AI provider connected" state.
     func testAskPanelRefreshesAfterConnectingProvider() {
         let app = XCUIApplication()
-        app.launchArguments += ["-uiTestSeed", "-uiTestInMemoryCredentials"]
+        app.launchArguments += [
+            "-uiTestSeed", "-uiTestInMemoryCredentials", "-uiTestSkipProviderValidation",
+        ]
         app.launch()
 
         openAskPanel(app)
