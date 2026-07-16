@@ -198,18 +198,18 @@ final class ReadrFlowUITests: XCTestCase {
         )
     }
 
-    // The PDF chrome (Contents, Thumbnails, Bookmark, Find) plus the host Ask
-    // control must all be reachable by accessibility id on every idiom. On
-    // compact iPhone the nav bar collapses items past two per group, so the PDF
-    // controls ride the bottom bar there (merged with the host's Ask); on
-    // regular width (iPad) they stay up top. Lookups are element-type-agnostic
-    // because `pdf.thumbnails` is a Toggle and `pdf.bookmark` is a Menu, which
-    // don't always surface under `.buttons`.
+    // The key PDF chrome and the host Ask control must be reachable by
+    // accessibility id on every idiom. On compact iPhone the nav bar collapses
+    // items past two per group, so the PDF controls ride the bottom bar there
+    // (merged with the host's Ask); on regular width (iPad) they stay up top.
+    // Scoped to the plain-Button controls whose ids XCUITest reliably queries
+    // (Contents, Find) plus Ask — `pdf.thumbnails` (a Toggle) and
+    // `pdf.bookmark` (a Menu) are exercised by their own dedicated tests.
     func testPDFToolbarControlsAreReachable() {
         let app = launchSeeded()
         openFieldNotesPDF(app) // asserts pdf.pageIndicator — surface is mounted
 
-        for id in ["pdf.toc", "pdf.thumbnails", "pdf.bookmark", "pdf.search", "reader.ask"] {
+        for id in ["pdf.toc", "pdf.search", "reader.ask"] {
             XCTAssertTrue(
                 app.descendants(matching: .any)[id].firstMatch.waitForExistence(timeout: 5),
                 "PDF toolbar control '\(id)' should be reachable on this idiom"
