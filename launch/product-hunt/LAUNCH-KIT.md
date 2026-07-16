@@ -102,6 +102,8 @@ background at 240×240. If you use a GIF, make frame one the static icon.
 > book, with citations pointing at the passages it came from. Small books go to
 > the model whole (with prompt caching); big ones use hybrid retrieval. Your
 > highlights and notes can also be composed into an editable Markdown article.
+> The point is uninterrupted reading: the answer comes to your page, not you
+> to a chatbot.
 >
 > On the AI: you bring your own. Paste an Anthropic or OpenAI key, or point it
 > at local Ollama and stay fully offline. No telemetry — there's no analytics
@@ -117,7 +119,7 @@ background at 240×240. If you use a GIF, make frame one the static icon.
 > actually do — push through, search the web, or ask an AI? I'd love to know
 > what the reading-plus-AI workflow looks like for other people.
 
-(~280 words. Post it the minute the launch is live.)
+(~300 words. Post it the minute the launch is live.)
 
 ---
 
@@ -202,11 +204,12 @@ background at 240×240. If you use a GIF, make frame one the static icon.
 > [PH link]
 
 **Tweet 2**
-> Why: every reader I know does the same loop — copy a paragraph, paste it into
+> Every reader I know does the same loop — copy a paragraph, paste it into
 > ChatGPT, ask, alt-tab back, lose their place.
 >
 > Readr removes the loop. Small books go to the model whole (prompt-cached);
-> big ones use hybrid retrieval. You never leave the page.
+> big ones use hybrid retrieval. You never leave the page — uninterrupted
+> reading.
 
 **Tweet 3**
 > The AI is yours, not ours: paste an Anthropic/OpenAI key, or run Ollama and
@@ -248,7 +251,8 @@ background at 240×240. If you use a GIF, make frame one the static icon.
 >
 > The macOS download is signed and notarized, and the iPhone & iPad beta is
 > open to everyone on TestFlight: TESTFLIGHT_JOIN_URL. DRM-free books only.
-> The code is public and contributions are welcome.
+> The code is public and contributions are welcome — built for the love of
+> reading.
 >
 > We'd genuinely value your feedback and questions on Product Hunt today:
 > [PH link]
