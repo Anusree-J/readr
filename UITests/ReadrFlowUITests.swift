@@ -196,10 +196,22 @@ final class ReadrFlowUITests: XCTestCase {
             byID.label.hasPrefix("Page 1 of 2"),
             "A freshly opened 2-page PDF should read 'Page 1 of 2' (got: \(byID.label))"
         )
-        // NOT asserted: the pdf.toc/pdf.search toolbar buttons — the iPhone
-        // nav bar silently collapses leading items past two (see the lesson
-        // note in ReaderView.toolbarContent), so their visibility is
-        // width-dependent.
+    }
+
+    // The PDF chrome (Contents, Thumbnails, Bookmark, Find) must be reachable by
+    // accessibility id on every idiom. On compact iPhone the nav bar collapses
+    // items past two per group, so these ride the bottom bar there; on regular
+    // width (iPad) they stay up top. Either way `button(...)` finds them by id.
+    func testPDFToolbarControlsAreReachable() {
+        let app = launchSeeded()
+        openFieldNotesPDF(app) // asserts pdf.pageIndicator — surface is mounted
+
+        for id in ["pdf.toc", "pdf.thumbnails", "pdf.bookmark", "pdf.search"] {
+            XCTAssertTrue(
+                app.buttons[id].firstMatch.waitForExistence(timeout: 5),
+                "PDF toolbar control '\(id)' should be reachable on this idiom"
+            )
+        }
     }
 
     // Opens the seeded "Field Notes" PDF from Home and waits for the native

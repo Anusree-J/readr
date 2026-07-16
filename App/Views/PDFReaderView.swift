@@ -182,7 +182,7 @@ struct PDFReaderView: View {
 
     @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
-        ToolbarItem(id: "pdf.toc", placement: .navigation) {
+        ToolbarItem(id: "pdf.toc", placement: navPlacement) {
             Button {
                 showTOC.toggle()
             } label: {
@@ -194,7 +194,7 @@ struct PDFReaderView: View {
                 PDFOutlineList(controller: controller) { showTOC = false }
             }
         }
-        ToolbarItem(id: "pdf.thumbnails", placement: .navigation) {
+        ToolbarItem(id: "pdf.thumbnails", placement: navPlacement) {
             Toggle(isOn: $showThumbnails) {
                 Label("Thumbnails", systemImage: "rectangle.grid.1x2")
             }
@@ -202,21 +202,34 @@ struct PDFReaderView: View {
             .help("Show page thumbnails")
             .accessibilityIdentifier("pdf.thumbnails")
         }
-        ToolbarItem(id: "pdf.bookmark", placement: .navigation) {
+        ToolbarItem(id: "pdf.bookmark", placement: navPlacement) {
             bookmarkMenu
         }
-        // On compact iPhone the trailing `.primaryAction` group is already full
-        // (Appearance + Notes from the host reader), and a third item there is
-        // silently collapsed into an overflow "…" menu — so route search to the
-        // bottom bar there. Regular width (iPad) / macOS keep it up top.
+        ToolbarItem(id: "pdf.search", placement: searchPlacement) {
+            searchButton
+        }
+    }
+
+    /// The iPhone nav bar silently collapses items past TWO in each of the
+    /// leading (`.navigation`) and trailing (`.primaryAction`) groups. The host
+    /// reader already fills the compact trailing group (Appearance + Notes), and
+    /// this view alone adds three leading controls (Contents, Thumbnails,
+    /// Bookmark) — over the leading budget too. So on compact iPhone all of the
+    /// PDF chrome lives in the bottom bar (Apple-Books style); regular width
+    /// (iPad) / macOS have nav-bar room and keep it up top.
+    private var navPlacement: ToolbarItemPlacement {
         #if os(iOS)
-        ToolbarItem(id: "pdf.search", placement: isRegularWidth ? .primaryAction : .bottomBar) {
-            searchButton
-        }
+        isRegularWidth ? .navigation : .bottomBar
         #else
-        ToolbarItem(id: "pdf.search", placement: .primaryAction) {
-            searchButton
-        }
+        .navigation
+        #endif
+    }
+
+    private var searchPlacement: ToolbarItemPlacement {
+        #if os(iOS)
+        isRegularWidth ? .primaryAction : .bottomBar
+        #else
+        .primaryAction
         #endif
     }
 
