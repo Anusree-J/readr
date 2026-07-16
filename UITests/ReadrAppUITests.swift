@@ -353,21 +353,8 @@ final class ReadrAppUITests: XCTestCase {
                 .waitForExistence(timeout: 10),
             "The error state should show the mapped, actionable sentence"
         )
-        // Query by identifier across any element type (the same pattern
-        // testPDFToolbarControlsAreReachable trusts): a styled Button wrapping
-        // a Label doesn't reliably surface under the strict `.buttons[]` type
-        // coercion, even though the control carries an explicit `.isButton`
-        // trait for VoiceOver. The element is still tappable.
-        let retry = app.descendants(matching: .any)["ask.retry"].firstMatch
-        if !retry.waitForExistence(timeout: 3) {
-            // Diagnostic: dump the live accessibility tree so the CI log shows
-            // exactly what element (if any) carries "ask.retry" and as what
-            // type, instead of guessing across cycles.
-            print("ASK_RETRY_HIERARCHY_DUMP_START")
-            print(app.debugDescription)
-            print("ASK_RETRY_HIERARCHY_DUMP_END")
-        }
-        XCTAssertTrue(retry.exists, "A Retry affordance should appear on error")
+        let retry = app.buttons["ask.retry"].firstMatch
+        XCTAssertTrue(retry.waitForExistence(timeout: 3), "A Retry affordance should appear on error")
 
         // Retry re-runs the same question — the error card reappears (the stub
         // still fails), proving the retry re-invoked the ask.

@@ -268,14 +268,6 @@ struct AskPanelView: View {
             // question to re-run. (A prior `if vm.lastQuestion != nil` gate was
             // both redundant and, because `lastQuestion` isn't `@Published`,
             // risked dropping the button from the accessibility tree.)
-            //
-            // The button wraps a `Label` (text + icon). Unlike the `ask.send`
-            // button (which wraps a bare `Image`), the `Label` publishes its
-            // own combined child element, so the wrapper's identifier/button
-            // trait don't reliably land on a `.button`-typed element that
-            // `app.buttons["ask.retry"]` can match. Collapsing the button into
-            // a single accessibility leaf with an explicit button trait exposes
-            // it as one queryable Button labeled "Retry".
             Button(action: retry) {
                 Label("Retry", systemImage: "arrow.clockwise")
                     .font(.callout.weight(.semibold))
@@ -286,8 +278,6 @@ struct AskPanelView: View {
             }
             .buttonStyle(.plain)
             .disabled(vm.isStreaming)
-            .accessibilityElement(children: .ignore)
-            .accessibilityAddTraits(.isButton)
             .accessibilityLabel("Retry")
             .accessibilityIdentifier("ask.retry")
         }
@@ -295,6 +285,14 @@ struct AskPanelView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.paper, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.red, lineWidth: 1))
+        // Mark this card as an accessibility container so its own
+        // `ask.error` identifier stays on the container and does NOT flatten
+        // onto the children. Without `.contain`, SwiftUI propagated
+        // `ask.error` down to every descendant — the CI accessibility dump
+        // showed the Retry button reporting `identifier: 'ask.error'` instead
+        // of its own `ask.retry`, so `app.buttons["ask.retry"]` never matched.
+        // (Matches the `settings.card.*` and `reader.appearance` containers.)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ask.error")
     }
 
