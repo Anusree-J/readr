@@ -51,6 +51,17 @@ struct PDFReaderView: View {
     @Binding var annotationActions: PDFAnnotationActions?
 
     @EnvironmentObject private var model: AppModel
+    #if os(iOS)
+    /// Placement of `pdf.search` depends on width: the compact iPhone nav bar
+    /// silently collapses trailing `.primaryAction` items past TWO, and the
+    /// host reader already spends both on Appearance + Notes there — so a third
+    /// trailing item (this search button) would be hidden in an overflow "…"
+    /// menu, taking `reader.notes` with it. On compact width we route search to
+    /// the bottom bar (mirroring the ebook `searchButton`); regular width (iPad)
+    /// has nav-bar room, so it stays up top like macOS.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isRegularWidth: Bool { horizontalSizeClass == .regular }
+    #endif
     @StateObject private var controller = PDFReaderController()
     /// Strip visibility persists across books like the other reader prefs.
     @AppStorage("pdfShowsThumbnails") private var showThumbnails = false
@@ -194,21 +205,35 @@ struct PDFReaderView: View {
         ToolbarItem(id: "pdf.bookmark", placement: .navigation) {
             bookmarkMenu
         }
+        // On compact iPhone the trailing `.primaryAction` group is already full
+        // (Appearance + Notes from the host reader), and a third item there is
+        // silently collapsed into an overflow "…" menu — so route search to the
+        // bottom bar there. Regular width (iPad) / macOS keep it up top.
+        #if os(iOS)
+        ToolbarItem(id: "pdf.search", placement: isRegularWidth ? .primaryAction : .bottomBar) {
+            searchButton
+        }
+        #else
         ToolbarItem(id: "pdf.search", placement: .primaryAction) {
-            Button {
-                showSearch.toggle()
-            } label: {
-                Label("Find in PDF", systemImage: "magnifyingglass")
-            }
-            // The host reader's text search is disabled in PDF mode, so ⌘F
-            // is ours here.
-            .keyboardShortcut("f", modifiers: .command)
-            .help("Find in PDF (⌘F)")
-            .accessibilityIdentifier("pdf.search")
-            .popover(isPresented: $showSearch, arrowEdge: .bottom) {
-                PDFSearchView(controller: controller) {
-                    showSearch = false
-                }
+            searchButton
+        }
+        #endif
+    }
+
+    private var searchButton: some View {
+        Button {
+            showSearch.toggle()
+        } label: {
+            Label("Find in PDF", systemImage: "magnifyingglass")
+        }
+        // The host reader's text search is disabled in PDF mode, so ⌘F
+        // is ours here.
+        .keyboardShortcut("f", modifiers: .command)
+        .help("Find in PDF (⌘F)")
+        .accessibilityIdentifier("pdf.search")
+        .popover(isPresented: $showSearch, arrowEdge: .bottom) {
+            PDFSearchView(controller: controller) {
+                showSearch = false
             }
         }
     }

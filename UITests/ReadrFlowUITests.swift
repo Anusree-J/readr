@@ -233,10 +233,12 @@ final class ReadrFlowUITests: XCTestCase {
     // of 2" (the reader opens on page 1).
     func testPDFSearchReturnJumpsToFirstHit() throws {
         let app = launchSeeded()
-        openFieldNotesPDF(app)
+        openFieldNotesPDF(app) // asserts pdf.pageIndicator — surface is mounted
 
-        // pdf.search is a trailing primaryAction toolbar item (never in the
-        // silently-collapsing leading group), so it's reachable on both idioms.
+        // pdf.search lives in the trailing primaryAction group on regular width
+        // (iPad/macOS) but in the bottom bar on compact iPhone — the compact nav
+        // bar only has room for the host reader's Appearance + Notes up top.
+        // Either way it's reachable by id.
         let search = button(app, id: "pdf.search", label: "Find in PDF")
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
@@ -1010,13 +1012,17 @@ final class ReadrFlowUITests: XCTestCase {
         let yellowChip = labeled(app.buttons, contains: "Yellow highlights")
         XCTAssertTrue(yellowChip.waitForExistence(timeout: 5), "The yellow color-filter chip should be present")
         let frame = yellowChip.frame
+        // The view applies `.frame(minWidth: 44, minHeight: 44)`, so intent is
+        // met; sub-point rendering rounding can report 43.999… so allow a tiny
+        // epsilon rather than padding the view past its 44pt design target.
+        let minTarget = 44.0 - 0.01
         XCTAssertGreaterThanOrEqual(
-            frame.height, 44,
-            "Color-filter chip hit target should be ≥44pt tall on iOS (R5)"
+            frame.height, minTarget,
+            "Color-filter chip hit target should be ≥44pt tall on iOS (R5), got \(frame.height)"
         )
         XCTAssertGreaterThanOrEqual(
-            frame.width, 44,
-            "Color-filter chip hit target should be ≥44pt wide on iOS (R5)"
+            frame.width, minTarget,
+            "Color-filter chip hit target should be ≥44pt wide on iOS (R5), got \(frame.width)"
         )
     }
 }

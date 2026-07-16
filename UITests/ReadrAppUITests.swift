@@ -302,7 +302,13 @@ final class ReadrAppUITests: XCTestCase {
         keyField.tap()
         keyField.typeText("sk-ant-uitest-key")
         app.buttons["settings.saveKey.anthropic"].firstMatch.tap()
-        app.navigationBars.buttons["Done"].firstMatch.tap()
+        // Dismiss the keyboard first: tapping the nav-bar "Done" while the
+        // keyboard is up makes XCUITest try (and fail) a scroll-to-visible on a
+        // non-scrollable nav bar (kAXErrorCannotComplete). A coordinate tap on
+        // the already-on-screen Done avoids the AX scroll action entirely.
+        let done = app.navigationBars.buttons["Done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        done.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
 
         // Back in the Ask panel: onDismiss re-resolved the provider, so the
         // empty state is gone and the ask input is present — no relaunch.

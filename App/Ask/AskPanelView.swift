@@ -176,6 +176,14 @@ struct AskPanelView: View {
                 .foregroundStyle(theme.faint)
             }
 
+            // The error card sits above the answer scroll region so its Retry
+            // button stays within the visible area of the iPhone medium sheet
+            // detent (a greedy ScrollView below it would otherwise push the
+            // button past the fold, hiding it from the accessibility tree).
+            if let error = vm.errorMessage {
+                errorCard(error)
+            }
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(vm.answer)
@@ -197,9 +205,6 @@ struct AskPanelView: View {
             }
 
             if vm.isStreaming { ThinkingDots(color: theme.iris) }
-            if let error = vm.errorMessage {
-                errorCard(error)
-            }
             Spacer()
         }
         .padding()
