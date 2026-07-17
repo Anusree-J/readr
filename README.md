@@ -88,6 +88,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - [docs/CONTEXT-STRATEGY.md](docs/CONTEXT-STRATEGY.md) — the adaptive
   whole-book-vs-retrieval decision.
 - [docs/ROADMAP.md](docs/ROADMAP.md) — milestone checklist.
+- Launch & PR materials (Product Hunt kit, TestFlight plan, launch assets)
+  live in [readr-ai/PR](https://github.com/readr-ai/PR).
 
 ## Installing (macOS)
 
