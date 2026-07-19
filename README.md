@@ -107,12 +107,10 @@ Anyway** on macOS 15+.)
 
 Readr for iPhone and iPad is in beta on TestFlight.
 
-<!-- TODO(launch): replace this note with the public TestFlight join link
-     (https://testflight.apple.com/join/…) once Beta App Review approves. -->
-The public TestFlight link is going live with the current beta review — check
-back shortly, or watch the [releases page](https://github.com/readr-ai/readr/releases)
-for the announcement. You can also [build from source](#building-from-source)
-with Xcode.
+Join with one tap:
+**[testflight.apple.com/join/U5dBEsSG](https://testflight.apple.com/join/U5dBEsSG)**
+— install Apple's TestFlight app first, then open the link on your iPhone or
+iPad. You can also [build from source](#building-from-source) with Xcode.
 
 ## Building from source
 
