@@ -160,11 +160,15 @@ def attach_build(group_id: str, build_id: str) -> None:
 
 
 def submit_for_review(build_id: str) -> str:
+    # A build that already has a review submission (waiting, in review, or
+    # decided) rejects a duplicate POST with 409 or 422 INVALID_QC_STATE —
+    # both mean "already submitted": fall through and report the existing
+    # submission's state instead.
     result = api("POST", "/v1/betaAppReviewSubmissions",
                  body={"data": {"type": "betaAppReviewSubmissions",
                                 "relationships": {"build": {"data": {
                                     "type": "builds", "id": build_id}}}}},
-                 tolerate=(409,))
+                 tolerate=(409, 422))
     if result and result["_status"] == 201:
         state = result["data"]["attributes"]["betaReviewState"]
         print(f"Submitted to Beta App Review: {state}")
