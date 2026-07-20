@@ -15,6 +15,8 @@ import AppKit
 /// to the extracted-text "Reading view" in Appearance.
 struct ReaderView: View {
     @EnvironmentObject private var model: AppModel
+    /// External chapter links open in the reader's browser.
+    @Environment(\.openURL) private var openURL
     let book: Book
 
     @State private var chapterIndex = 0
@@ -342,7 +344,8 @@ struct ReaderView: View {
                         handleAnnotation(in: chapter, target: target, action: action)
                     },
                     onSelectionChange: { currentSelection.value = $0 },
-                    onChromeToggle: toggleChrome
+                    onChromeToggle: toggleChrome,
+                    onLinkTap: handleLinkTap
                 )
                 // Scroll mode has no pages, but a horizontal flick still
                 // crosses chapters — the paged layouts flow across chapter
@@ -372,6 +375,7 @@ struct ReaderView: View {
                     },
                     onSelectionChange: { currentSelection.value = $0 },
                     onChromeToggle: toggleChrome,
+                    onLinkTap: handleLinkTap,
                     canOverflowBackward: chapterIndex > 0,
                     canOverflowForward: chapterIndex < book.chapters.count - 1,
                     onOverflow: { direction in
@@ -968,6 +972,23 @@ struct ReaderView: View {
         model.savePosition(position, for: book)
     }
 
+    /// A tapped link in chapter text. Internal links resolve their archive
+    /// path against `Chapter.sourcePath` and their fragment against
+    /// `Chapter.anchors`, then ride the same `jump` as TOC/bookmarks/search.
+    /// External links normally never reach here (the platform text views hand
+    /// them to the system), but route through `openURL` if one ever does.
+    private func handleLinkTap(_ target: LinkTarget) {
+        switch target {
+        case let .external(url):
+            if let url = URL(string: url) { openURL(url) }
+        case let .internalDoc(path, fragment):
+            guard let index = book.chapters.firstIndex(where: { $0.sourcePath == path })
+            else { return }
+            let offset = fragment.flatMap { book.chapters[index].anchors?[$0] } ?? 0
+            jump(toChapter: index, offset: offset)
+        }
+    }
+
     /// Restore once; later re-appears (e.g. after dismissing a sheet) must not
     /// clobber the chapter the reader navigated to.
     private func restoreOnce() {
@@ -1210,7 +1231,7 @@ struct ScrollReadingColumn: View {
     /// Highlights in chapter coordinates.
     let highlights: [HighlightSpan]
     /// Inline images keyed by character offset in chapter coordinates.
-    var inlineImages: [Int: PlatformImage] = [:]
+    var inlineImages: [Int: InlineImage] = [:]
     /// Programmatic jump target (see SelectableTextView.scrollToOffset).
     var scrollTarget: Binding<Int?>? = nil
     var onAnnotate: (AnnotationTarget, AnnotationAction) -> Void = { _, _ in }
@@ -1220,6 +1241,8 @@ struct ScrollReadingColumn: View {
     /// A clean tap on the page (no selection, no annotation bar): the host
     /// toggles its chrome, Apple-Books-style. iOS only; nil ⇒ ignored.
     var onChromeToggle: (() -> Void)? = nil
+    /// A tapped internal link — the host resolves and jumps.
+    var onLinkTap: ((LinkTarget) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1242,12 +1265,14 @@ struct ScrollReadingColumn: View {
                 highlights: highlights,
                 style: style,
                 inlineImages: inlineImages,
+                formatSpans: chapter.formatSpans ?? [],
                 scrollToOffset: scrollTarget,
                 onAnnotate: onAnnotate,
                 onSelectionChange: onSelectionChange,
                 // Scroll mode has no page-turn zones — any clean page tap
                 // just toggles the chrome.
-                onPageTap: { _, _ in onChromeToggle?() }
+                onPageTap: { _, _ in onChromeToggle?() },
+                onLinkTap: onLinkTap
             )
         }
         .padding(.horizontal, 24)
