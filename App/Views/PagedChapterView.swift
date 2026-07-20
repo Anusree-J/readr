@@ -591,7 +591,11 @@ private struct SwipeToTurn: ViewModifier {
 
     func body(content: Content) -> some View {
         #if os(iOS)
-        content.gesture(
+        // High priority: the page-turn drag must beat any competing
+        // recognizer on the stack (system navigation gestures included) —
+        // a plain .gesture yields, and the swipe pops the reader instead
+        // of turning the page.
+        content.highPriorityGesture(
             DragGesture(minimumDistance: 40)
                 .onEnded { value in
                     let h = value.translation.width

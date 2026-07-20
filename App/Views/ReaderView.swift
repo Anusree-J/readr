@@ -90,6 +90,9 @@ struct ReaderView: View {
 
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// Pops the reader off the NavigationStack — the explicit back chevron's
+    /// action (the system back button is hidden, see `toolbarContent`).
+    @Environment(\.dismiss) private var dismiss
 
     /// Apple-Books-style distraction-free reading: a tap on the middle of the
     /// page hides ALL chrome (nav bar, bottom bar, status bar), another tap
@@ -166,6 +169,15 @@ struct ReaderView: View {
             .toolbar(showChrome ? .visible : .hidden, for: .navigationBar)
             .toolbar(showChrome ? .visible : .hidden, for: .bottomBar)
             .statusBarHidden(!showChrome)
+            // The reader owns horizontal swipes: in paged mode a
+            // left-to-right drag turns BACK a page (SwipeToTurn), so the
+            // system back affordances step aside — the back button is
+            // replaced by an explicit chevron (see `toolbarContent`) and the
+            // interactive pop gesture is off while reading. Apple Books does
+            // the same; leaving the pop gesture live let it win the swipe
+            // and dump the reader back in the library mid-read.
+            .navigationBarBackButtonHidden(true)
+            .background(PopGestureDisabler())
             #endif
             .background(hiddenFontShortcuts)
             .background(hiddenAnnotationShortcuts)
@@ -448,6 +460,20 @@ struct ReaderView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        #if os(iOS)
+        // The explicit way back to the library: the system back button is
+        // hidden and the pop gesture disabled (see body) so right-swipes turn
+        // pages. Reachable whenever chrome is shown — a page tap brings the
+        // bar back, as in Apple Books.
+        ToolbarItem(placement: .topBarLeading) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.backward")
+            }
+            .accessibilityIdentifier("reader.back")
+            .accessibilityLabel("Back to Library")
+            .help("Back to Library")
+        }
+        #endif
         ToolbarItemGroup(placement: .navigation) {
             // Chapter chevrons are a macOS-only affordance. On iOS they read
             // as mystery buttons pinned over the page (nothing like Apple
