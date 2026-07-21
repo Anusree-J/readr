@@ -453,8 +453,8 @@ struct ReaderStyle: Equatable {
         return UIFont(descriptor: descriptor, size: font.pointSize)
         #else
         let feature: [NSFontDescriptor.FeatureKey: Int] = [
-            .type: kLowerCaseType,
-            .selector: kLowerCaseSmallCapsSelector,
+            .typeIdentifier: kLowerCaseType,
+            .selectorIdentifier: kLowerCaseSmallCapsSelector,
         ]
         let descriptor = font.fontDescriptor.addingAttributes([.featureSettings: [feature]])
         return NSFont(descriptor: descriptor, size: font.pointSize) ?? font
