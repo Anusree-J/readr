@@ -450,7 +450,7 @@ struct PagedChapterView: View {
                     .foregroundStyle(style.theme.faint)
                     .lineLimit(1)
                     .accessibilityLabel(title)
-                    .accessibilityIdentifier(title)
+                    .accessibilityIdentifier("reader.kicker")
                     .padding(.bottom, 22)
             }
             SelectableTextView(

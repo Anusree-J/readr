@@ -455,15 +455,21 @@ final class ReadrFlowUITests: XCTestCase {
 
         // Continuous reading order must NOT flow into the linear="no" notes
         // doc: a forward flick past the last linear chapter goes nowhere.
+        // Probe the reader's own kicker — a bare staticTexts["Notes"] check
+        // always passes because the library's "Notes" section label stays
+        // mounted in the navigation hierarchy beneath the reader.
         let text = app.textViews.firstMatch
         XCTAssertTrue(text.waitForExistence(timeout: 5))
         text.swipeLeft()
+        let notesKicker = app.staticTexts.matching(
+            NSPredicate(format: "identifier == 'reader.kicker' AND label == 'Notes'")
+        ).firstMatch
         XCTAssertFalse(
-            app.staticTexts["Notes"].firstMatch.waitForExistence(timeout: 3),
+            notesKicker.waitForExistence(timeout: 3),
             "A forward swipe past the last linear chapter must skip the notes document"
         )
-        XCTAssertTrue(
-            app.staticTexts["Chapter Two"].firstMatch.exists,
+        XCTAssertEqual(
+            app.staticTexts["reader.kicker"].firstMatch.label, "Chapter Two",
             "The reader should stay on the last linear chapter"
         )
     }

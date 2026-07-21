@@ -1491,7 +1491,7 @@ struct ScrollReadingColumn: View {
                     .foregroundStyle(style.theme.faint)
                     .lineLimit(1)
                     .accessibilityLabel(title)
-                    .accessibilityIdentifier(title)
+                    .accessibilityIdentifier("reader.kicker")
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 26)
             }
