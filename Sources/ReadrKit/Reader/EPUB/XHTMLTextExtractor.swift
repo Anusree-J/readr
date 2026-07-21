@@ -15,12 +15,25 @@ public enum XHTMLTextExtractor {
     private static let blockTags: Set<String> = [
         "p", "div", "br", "li", "tr", "section", "article", "blockquote",
         "h1", "h2", "h3", "h4", "h5", "h6",
+        "aside", "figure", "figcaption", "table", "caption", "dt", "dd",
+        "hr", "pre", "center",
     ]
 
     /// Container tags whose entire contents are non-content and get dropped.
     /// `rt`/`rp` hold ruby phonetic annotations — keeping them would duplicate
-    /// the annotated base text in the extracted prose.
-    private static let nonContentTags: Set<String> = ["script", "style", "head", "rt", "rp"]
+    /// the annotated base text in the extracted prose. `title`/`desc` are the
+    /// SVG accessibility elements (the HTML `<title>` already falls inside the
+    /// skipped `<head>`), and `<template>` contents are inert by definition.
+    private static let nonContentTags: Set<String> = [
+        "script", "style", "head", "rt", "rp", "template", "title", "desc",
+    ]
+
+    /// HTML void elements (plus SVG `<image>`): they never have a close tag,
+    /// so a hidden-region diversion must not wait for one.
+    private static let voidTags: Set<String> = [
+        "img", "image", "br", "hr", "meta", "link", "input", "col", "area",
+        "base", "embed", "source", "track", "wbr",
+    ]
 
     /// The placeholder each `<img>` becomes in extracted text: U+FFFC OBJECT
     /// REPLACEMENT CHARACTER — the same character `NSAttributedString` uses for
@@ -64,6 +77,25 @@ public enum XHTMLTextExtractor {
             case italic
             case blockquote
             case link(href: String)
+            case superscript
+            case `subscript`
+            /// Paragraph-level alignment recovered from inline markup only
+            /// (`<center>`, `align="…"`, `style="text-align:…"` — no CSS
+            /// engine).
+            case alignment(TextAlignment)
+        }
+    }
+
+    /// A footnote/endnote body diverted out of the main text: the element's
+    /// id (the fragment a noteref link resolves to) plus its extracted text,
+    /// normalized the same way as the main text.
+    public struct ExtractedFootnote: Equatable, Sendable {
+        public var id: String
+        public var text: String
+
+        public init(id: String, text: String) {
+            self.id = id
+            self.text = text
         }
     }
 
@@ -75,6 +107,9 @@ public enum XHTMLTextExtractor {
         public var spans: [Span]
         /// Element id → character offset of the following content.
         public var anchors: [String: Int]
+        /// Note bodies (footnote/endnote asides, `hidden` elements) lifted
+        /// OUT of `text`, in document order.
+        public var footnotes: [ExtractedFootnote]
     }
 
     /// Full-fidelity extraction: text, images, format spans, anchors.
@@ -147,6 +182,35 @@ public enum XHTMLTextExtractor {
         /// Open lists, innermost last; `count` is the 1-based item counter.
         private var listStack: [(ordered: Bool, count: Int)] = []
 
+        /// An active footnote/hidden region: everything until the matching
+        /// close tag of `name` (same-name nesting tracked via `depth`) is
+        /// normalized into `out` instead of the main text. `id == nil` means
+        /// the content is simply dropped — it was hidden with no note id.
+        private struct Diversion {
+            let name: String
+            var depth: Int
+            let id: String?
+            var out: [Character] = []
+            var pendingSpace = false
+            var pendingNewline = false
+        }
+        private var diversion: Diversion?
+        private var footnotes: [ExtractedFootnote] = []
+
+        /// True when the last block break came from a `<br>` with no content
+        /// since — a second consecutive `<br>` is a deliberate blank line.
+        private var lastBreakWasBr = false
+        /// `out.count` at the most recent `<p>` open; unchanged at `</p>`
+        /// means the paragraph was explicitly empty (a scene-break blank).
+        private var openParagraphStart: Int?
+        /// Open `<blockquote>` spans — lets a heading open close them (an
+        /// unclosed blockquote must not style the rest of the chapter)
+        /// without scanning `openStack` when none is open.
+        private var openBlockquoteCount = 0
+        /// Open attribute-driven alignment spans per element name, so the
+        /// element's own close tag (which is not a span tag) closes them.
+        private var openAlignSpans: [String: Int] = [:]
+
         init(html: String, includeImages: Bool = true) {
             self.html = html
             self.includeImages = includeImages
@@ -197,16 +261,23 @@ public enum XHTMLTextExtractor {
 
         // MARK: Text emission
 
-        /// Route decoded text through the whitespace normalizer: space/tab
-        /// become a pending (collapsing) space, newlines a pending paragraph
-        /// break, everything else is content.
+        /// Route decoded text through the whitespace normalizer: ALL source
+        /// whitespace — including newlines, which are wrapping, not
+        /// structure — becomes a pending (collapsing) space; only tags create
+        /// block breaks. A literal U+FFFC is stripped so the placeholder ↔
+        /// image pairing cannot desync.
         private func feedText(_ decoded: String) {
+            if diversion != nil {
+                feedDivertedText(decoded)
+                return
+            }
             for ch in decoded {
                 switch ch {
-                case " ", "\t":
+                // "\r\n" is a single Swift grapheme — list it explicitly.
+                case " ", "\t", "\n", "\r", "\r\n":
                     pendingSpace = true
-                case "\n", "\r":
-                    pendingNewline = true
+                case XHTMLTextExtractor.imagePlaceholder:
+                    break
                 default:
                     emitContent(ch)
                 }
@@ -245,6 +316,80 @@ public enum XHTMLTextExtractor {
                 unresolvedAnchors.removeAll(keepingCapacity: true)
             }
             out.append(ch)
+            lastBreakWasBr = false
+        }
+
+        /// A visible blank line — a paragraph holding a single NBSP between
+        /// two breaks — for deliberate scene breaks (`<p></p>`, `<br><br>`).
+        /// A plain `\n\n` would collapse at render time; the NBSP keeps the
+        /// blank paragraph visible.
+        private func emitBlankLine() {
+            guard !out.isEmpty else { return } // a leading blank would be trimmed anyway
+            pendingNewline = true
+            emitContent("\u{00A0}")
+            pendingNewline = true
+            pendingSpace = false
+        }
+
+        /// `<hr>`: a centered "* * *" scene-break paragraph — the thematic
+        /// break stays visible in extracted text.
+        private func emitSceneBreak() {
+            pendingNewline = true
+            let index = working.count
+            working.append(WorkingSpan(
+                tag: "@hr", kind: .alignment(.center), start: nil, end: nil
+            ))
+            unresolvedStarts.insert(index)
+            for ch in "* * *" { emitContent(ch) }
+            working[index].end = out.count
+            pendingNewline = true
+        }
+
+        // MARK: Diverted (footnote/hidden) emission
+
+        /// `feedText` for an active diversion: same whitespace model, but
+        /// into the note's own buffer — nothing reaches the main text.
+        private func feedDivertedText(_ decoded: String) {
+            for ch in decoded {
+                switch ch {
+                case " ", "\t", "\n", "\r", "\r\n":
+                    diversion?.pendingSpace = true
+                case XHTMLTextExtractor.imagePlaceholder:
+                    break
+                default:
+                    emitDivertedContent(ch)
+                }
+            }
+        }
+
+        private func emitDivertedContent(_ ch: Character) {
+            guard diversion != nil else { return }
+            if diversion!.out.isEmpty, ch.isWhitespace {
+                diversion!.pendingSpace = false
+                diversion!.pendingNewline = false
+                return
+            }
+            if diversion!.pendingNewline {
+                if !diversion!.out.isEmpty { diversion!.out.append("\n") }
+                diversion!.pendingNewline = false
+                diversion!.pendingSpace = false
+            } else if diversion!.pendingSpace {
+                if !diversion!.out.isEmpty { diversion!.out.append(" ") }
+                diversion!.pendingSpace = false
+            }
+            diversion!.out.append(ch)
+        }
+
+        /// Close the active diversion: trim, and store the note under the
+        /// element's id. No id, or no content → nothing to store (dropped).
+        private func endDiversion() {
+            guard let ended = diversion else { return }
+            diversion = nil
+            guard let id = ended.id else { return }
+            var text = ended.out
+            while let last = text.last, last.isWhitespace { text.removeLast() }
+            guard !text.isEmpty else { return }
+            footnotes.append(ExtractedFootnote(id: id, text: String(text)))
         }
 
         // MARK: Tags
@@ -270,6 +415,15 @@ public enum XHTMLTextExtractor {
             let name = qualified.split(separator: ":").last.map(String.init) ?? qualified
             guard let head = name.first, head.isLetter else { return }
 
+            // <epub:switch>: only the <epub:default> branch is fallback
+            // content — <epub:case> branches target specialized renderers
+            // (MathML islands etc.) and are skipped whole. The switch and
+            // default wrappers themselves are transparent unknown tags.
+            if !isClosing, !selfClosing, name == "case" {
+                skipNonContent(qualified, resumeAt: &i)
+                return
+            }
+
             if isClosing {
                 handleCloseTag(name)
             } else {
@@ -286,6 +440,31 @@ public enum XHTMLTextExtractor {
             _ name: String, tagMarkup: String, hasAttributes: Bool,
             selfClosing: Bool, resumeAt i: inout String.Index
         ) {
+            if diversion != nil {
+                handleDivertedOpenTag(name, selfClosing: selfClosing, resumeAt: &i)
+                return
+            }
+
+            // Footnote/hidden region: epub:type footnote/endnote/rearnote/
+            // note, role doc-footnote/doc-endnote, the boolean `hidden`
+            // attribute, or inline display:none / visibility:hidden. All
+            // content diverts to the footnote store, keyed by the element's
+            // own id (which therefore does NOT enter the anchors map).
+            if hasAttributes, XHTMLTextExtractor.isNoteOrHiddenRegion(tagMarkup) {
+                // Self-closed and void elements (`<img hidden>`) have no
+                // contents to divert — drop the element itself outright; a
+                // diversion would wait for a close tag that never comes.
+                guard !selfClosing, !XHTMLTextExtractor.voidTags.contains(name) else { return }
+                let id = XHTMLTextExtractor.attribute("id", in: tagMarkup)
+                diversion = Diversion(
+                    name: name, depth: 1,
+                    id: (id?.isEmpty == false) ? id : nil
+                )
+                // The enclosing <p> held content — it just went to the note.
+                openParagraphStart = nil
+                return
+            }
+
             // id="…" on ANY element feeds the anchors map (first id wins).
             if hasAttributes, tagMarkup.contains("id"),
                let id = XHTMLTextExtractor.attribute("id", in: tagMarkup), !id.isEmpty,
@@ -298,9 +477,8 @@ public enum XHTMLTextExtractor {
                 return
             }
 
-            if name == "img" {
-                if includeImages, hasAttributes,
-                   let src = XHTMLTextExtractor.attribute("src", in: tagMarkup), !src.isEmpty {
+            if name == "img" || name == "image" {
+                if includeImages, hasAttributes, let src = imageSource(name, tagMarkup) {
                     images.append(InlineImageRef(
                         src: src,
                         alt: XHTMLTextExtractor.attribute("alt", in: tagMarkup),
@@ -313,7 +491,31 @@ public enum XHTMLTextExtractor {
             }
 
             if XHTMLTextExtractor.blockTags.contains(name) {
+                if name == "br" {
+                    if pendingNewline, lastBreakWasBr {
+                        // Second consecutive <br>: a deliberate blank line.
+                        emitBlankLine()
+                    }
+                    lastBreakWasBr = true
+                } else {
+                    lastBreakWasBr = false
+                }
                 pendingNewline = true
+                if name == "p" { openParagraphStart = out.count }
+                // Inline alignment (align="…" / style="text-align:…") on a
+                // block element; br/hr are void — nothing could close them.
+                if hasAttributes, !selfClosing, name != "br", name != "hr",
+                   tagMarkup.contains("align"),
+                   let alignment = XHTMLTextExtractor.inlineAlignment(in: tagMarkup) {
+                    let index = working.count
+                    working.append(WorkingSpan(
+                        tag: name + "@align", kind: .alignment(alignment),
+                        start: nil, end: nil
+                    ))
+                    openStack.append(index)
+                    unresolvedStarts.insert(index)
+                    openAlignSpans[name, default: 0] += 1
+                }
             }
 
             switch name {
@@ -329,20 +531,65 @@ public enum XHTMLTextExtractor {
                     let top = listStack[listStack.count - 1]
                     pendingPrefix = top.ordered ? Array("\(top.count). ") : Array("• ")
                 }
+            case "hr":
+                emitSceneBreak()
             default:
                 break
             }
 
             guard !selfClosing else { return }
             if let (tag, kind) = spanKind(name, tagMarkup: tagMarkup, hasAttributes: hasAttributes) {
+                if case .heading = kind {
+                    // An unclosed <blockquote> must not style the rest of the
+                    // chapter: a heading starts a new structural region, so
+                    // close any blockquote still open (document end stays the
+                    // last resort).
+                    while openBlockquoteCount > 0 { closeSpan("blockquote") }
+                }
                 let index = working.count
                 working.append(WorkingSpan(tag: tag, kind: kind, start: nil, end: nil))
                 openStack.append(index)
                 unresolvedStarts.insert(index)
+                if tag == "blockquote" { openBlockquoteCount += 1 }
+            }
+        }
+
+        /// SVG `<image>` refs use href/xlink:href; `<img>` uses src.
+        private func imageSource(_ name: String, _ tagMarkup: String) -> String? {
+            let src: String?
+            if name == "img" {
+                src = XHTMLTextExtractor.attribute("src", in: tagMarkup)
+            } else {
+                src = XHTMLTextExtractor.attribute("href", in: tagMarkup)
+                    ?? XHTMLTextExtractor.attribute("xlink:href", in: tagMarkup)
+            }
+            guard let src, !src.isEmpty else { return nil }
+            return src
+        }
+
+        /// Open tags inside a diversion: non-content blocks still skip, a
+        /// same-name open deepens the region, block boundaries break the
+        /// note's paragraphs. No anchors, spans, images, or list markers.
+        private func handleDivertedOpenTag(
+            _ name: String, selfClosing: Bool, resumeAt i: inout String.Index
+        ) {
+            if XHTMLTextExtractor.nonContentTags.contains(name), !selfClosing {
+                skipNonContent(name, resumeAt: &i)
+                return
+            }
+            if name == diversion!.name, !selfClosing {
+                diversion!.depth += 1
+            }
+            if XHTMLTextExtractor.blockTags.contains(name) {
+                diversion!.pendingNewline = true
             }
         }
 
         private func handleCloseTag(_ name: String) {
+            if diversion != nil {
+                handleDivertedCloseTag(name)
+                return
+            }
             switch name {
             case "td", "th":
                 // A space between cells keeps rows readable once the markup
@@ -351,15 +598,42 @@ public enum XHTMLTextExtractor {
             case "ul", "ol":
                 if !listStack.isEmpty { listStack.removeLast() }
                 pendingPrefix = nil
+            case "p":
+                // An explicitly empty paragraph (`<p></p>`, `<p>&nbsp;</p>`)
+                // is a deliberate blank line (scene break) — keep it visible.
+                if let mark = openParagraphStart, out.count == mark {
+                    emitBlankLine()
+                }
+                openParagraphStart = nil
             default:
                 break
             }
             if XHTMLTextExtractor.blockTags.contains(name) {
                 pendingNewline = true
+                if name != "br" { lastBreakWasBr = false }
                 if name == "li" { pendingPrefix = nil }
+            }
+            if let open = openAlignSpans[name], open > 0 {
+                closeSpan(name + "@align")
+                openAlignSpans[name] = open - 1
             }
             if let key = spanTagKey(name) {
                 closeSpan(key)
+            }
+        }
+
+        /// Close tags inside a diversion: the region's own close (at depth
+        /// zero) ends it; block boundaries break the note's paragraphs.
+        private func handleDivertedCloseTag(_ name: String) {
+            if name == diversion!.name {
+                diversion!.depth -= 1
+                if diversion!.depth == 0 {
+                    endDiversion()
+                    return
+                }
+            }
+            if XHTMLTextExtractor.blockTags.contains(name) {
+                diversion!.pendingNewline = true
             }
         }
 
@@ -373,6 +647,12 @@ public enum XHTMLTextExtractor {
                 pendingPrefix = nil
             case "li":
                 pendingPrefix = nil
+            case "p":
+                // `<p/>` is an explicitly empty paragraph — a blank line.
+                if let mark = openParagraphStart, out.count == mark {
+                    emitBlankLine()
+                }
+                openParagraphStart = nil
             default:
                 break
             }
@@ -389,6 +669,7 @@ public enum XHTMLTextExtractor {
             case "i", "em": return "i"
             case "blockquote": return "blockquote"
             case "a": return "a"
+            case "sup", "sub", "center", "th": return name
             case "h1", "h2", "h3", "h4", "h5", "h6": return name
             default: return nil
             }
@@ -402,6 +683,10 @@ public enum XHTMLTextExtractor {
             case "b": return (key, .bold)
             case "i": return (key, .italic)
             case "blockquote": return (key, .blockquote)
+            case "sup": return (key, .superscript)
+            case "sub": return (key, .`subscript`)
+            case "center": return (key, .alignment(.center))
+            case "th": return (key, .bold) // header cells read as emphasized
             case "a":
                 guard hasAttributes,
                       let href = XHTMLTextExtractor.attribute("href", in: tagMarkup),
@@ -429,6 +714,7 @@ public enum XHTMLTextExtractor {
                 return // Stray close tag — tolerate.
             }
             let index = openStack.remove(at: stackPosition)
+            if working[index].tag == "blockquote" { openBlockquoteCount -= 1 }
             if unresolvedStarts.remove(index) == nil {
                 working[index].end = out.count
             }
@@ -472,6 +758,8 @@ public enum XHTMLTextExtractor {
         // MARK: Finish
 
         private func finalize() -> ExtractionResult {
+            // An unclosed footnote/hidden region ends at the document's end.
+            endDiversion()
             // Unclosed elements end at the document's end.
             for index in openStack where !unresolvedStarts.contains(index) {
                 if working[index].end == nil { working[index].end = out.count }
@@ -497,7 +785,8 @@ public enum XHTMLTextExtractor {
                 anchors[id] = length
             }
             return ExtractionResult(
-                text: String(out), images: images, spans: spans, anchors: anchors
+                text: String(out), images: images, spans: spans, anchors: anchors,
+                footnotes: footnotes
             )
         }
 
@@ -516,7 +805,8 @@ public enum XHTMLTextExtractor {
     /// compilation dominates extraction time on element-dense files.
     private static let attributeRegexes: [String: NSRegularExpression] = {
         var regexes: [String: NSRegularExpression] = [:]
-        for name in ["id", "src", "alt", "href", "style", "width", "height"] {
+        for name in ["id", "src", "alt", "href", "style", "width", "height",
+                     "class", "epub:type", "role", "hidden", "align", "xlink:href"] {
             regexes[name] = try? NSRegularExpression(
                 pattern: "(?<![\\w-])\(name)\\s*=\\s*(\"[^\"]*\"|'[^']*')",
                 options: [.caseInsensitive]
@@ -544,6 +834,103 @@ public enum XHTMLTextExtractor {
         guard let quoteStart = pair.firstIndex(where: { $0 == "\"" || $0 == "'" }) else { return nil }
         let value = pair[pair.index(after: quoteStart)..<pair.index(before: pair.endIndex)]
         return decodeEntities(String(value))
+    }
+
+    // MARK: - Note / hidden region detection
+
+    /// `epub:type` tokens that mark an element as a NOTE BODY. Word-boundary
+    /// semantics via token match: `noteref` (the marker) and the plural
+    /// container types (`endnotes` — a visible section) must not match.
+    private static let noteEpubTypes: Set<String> = [
+        "footnote", "endnote", "rearnote", "note",
+    ]
+    private static let noteRoles: Set<String> = ["doc-footnote", "doc-endnote"]
+
+    /// True when an open tag starts a footnote/hidden region whose content
+    /// belongs in the footnote store (or the void) rather than the main text.
+    static func isNoteOrHiddenRegion(_ tagMarkup: String) -> Bool {
+        if tagMarkup.contains("epub:type"),
+           let type = attribute("epub:type", in: tagMarkup),
+           hasToken(of: noteEpubTypes, in: type) {
+            return true
+        }
+        if tagMarkup.contains("role"),
+           let role = attribute("role", in: tagMarkup),
+           hasToken(of: noteRoles, in: role) {
+            return true
+        }
+        if tagMarkup.contains("hidden"), hasBooleanAttribute("hidden", in: tagMarkup) {
+            return true
+        }
+        if tagMarkup.contains("style"), let style = attribute("style", in: tagMarkup) {
+            if let display = styleValue("display", in: style),
+               display.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("none") {
+                return true
+            }
+            if let visibility = styleValue("visibility", in: style),
+               visibility.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("hidden") {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Whitespace-separated token match within an attribute value.
+    private static func hasToken(of tokens: Set<String>, in value: String) -> Bool {
+        value.lowercased().split(whereSeparator: \.isWhitespace)
+            .contains { tokens.contains(String($0)) }
+    }
+
+    /// True when the tag carries the boolean attribute `name` — bare
+    /// (`<div hidden>`) or valued (`hidden=""`, any value counts per HTML).
+    /// Quoted attribute VALUES are blanked before matching so `class="hidden"`
+    /// or `href="hidden.xhtml"` never count.
+    static func hasBooleanAttribute(_ name: String, in tag: String) -> Bool {
+        var unquoted = ""
+        unquoted.reserveCapacity(tag.count)
+        var quote: Character?
+        for ch in tag {
+            if let q = quote {
+                if ch == q { quote = nil }
+                continue
+            }
+            if ch == "\"" || ch == "'" {
+                quote = ch
+                unquoted.append(" ")
+                continue
+            }
+            unquoted.append(ch)
+        }
+        return unquoted.range(
+            of: "(?<![\\w-])\(name)(?![\\w-])",
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    // MARK: - Inline alignment
+
+    /// Alignment declared inline on a block open tag: `style="text-align:…"`
+    /// wins over the presentational `align="…"` attribute (matching CSS
+    /// precedence at render time). No stylesheet engine — inline sources only.
+    static func inlineAlignment(in tagMarkup: String) -> TextAlignment? {
+        if let style = attribute("style", in: tagMarkup),
+           let declared = styleValue("text-align", in: style),
+           let alignment = alignmentValue(declared) {
+            return alignment
+        }
+        if let attr = attribute("align", in: tagMarkup) {
+            return alignmentValue(attr)
+        }
+        return nil
+    }
+
+    /// Parse an alignment keyword ("center", "Right", "left !important");
+    /// anything unrecognized yields nil.
+    private static func alignmentValue(_ raw: String) -> TextAlignment? {
+        guard let keyword = raw.lowercased().split(whereSeparator: \.isWhitespace).first else {
+            return nil
+        }
+        return TextAlignment(rawValue: String(keyword))
     }
 
     /// The intended display size (CSS px) for one dimension of an `<img>` tag.
@@ -588,15 +975,48 @@ public enum XHTMLTextExtractor {
 
     // MARK: - Headings (legacy title helper)
 
+    /// Compiled once — `firstHeading` runs per chapter at import. The
+    /// backreference makes `<h1>…</h2>` a non-match (a broken pair must not
+    /// swallow markup up to some later close), and dot-matches-newlines lets
+    /// headings span source lines.
+    private static let headingRegex = try? NSRegularExpression(
+        pattern: "<h([1-6])[^>]*>(.*?)</h\\1\\s*>",
+        options: [.caseInsensitive, .dotMatchesLineSeparators]
+    )
+    private static let titleElementRegex = try? NSRegularExpression(
+        pattern: "<title[^>]*>(.*?)</title\\s*>",
+        options: [.caseInsensitive, .dotMatchesLineSeparators]
+    )
+
     /// First heading (`<h1>`…`<h6>`) text, for use as a chapter title.
+    /// Headings that strip to nothing (decorative images) are skipped; when
+    /// no heading yields text, the document's `<title>` is the fallback.
     public static func firstHeading(from html: String) -> String? {
-        guard let match = html.range(
-            of: "<h[1-6][^>]*>(.*?)</h[1-6]>",
-            options: [.regularExpression, .caseInsensitive]
-        ) else { return nil }
-        let inner = html[match]
-            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-        let title = decodeEntities(inner).trimmingCharacters(in: .whitespacesAndNewlines)
+        let ns = html as NSString
+        let range = NSRange(location: 0, length: ns.length)
+        if let regex = headingRegex {
+            for match in regex.matches(in: html, range: range) {
+                if let title = titleText(ns.substring(with: match.range(at: 2))) {
+                    return title
+                }
+            }
+        }
+        if let regex = titleElementRegex,
+           let match = regex.firstMatch(in: html, range: range),
+           let title = titleText(ns.substring(with: match.range(at: 1))) {
+            return title
+        }
+        return nil
+    }
+
+    /// Strip tags, decode entities, collapse whitespace; nil when empty.
+    private static func titleText(_ inner: String) -> String? {
+        let stripped = inner.replacingOccurrences(
+            of: "<[^>]+>", with: " ", options: .regularExpression
+        )
+        let title = decodeEntities(stripped)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? nil : title
     }
 
@@ -629,7 +1049,12 @@ public enum XHTMLTextExtractor {
                 } else {
                     scalarValue = UInt32(digits, radix: 10)
                 }
-                if let value = scalarValue, let scalar = Unicode.Scalar(value) {
+                if let value = scalarValue, let mapped = cp1252C1References[value] {
+                    // &#128;–&#159; are C1 controls in Unicode, but books
+                    // (Word/legacy tool exports) mean the Windows-1252
+                    // printables at those byte values (&#146; → ’, &#151; → —).
+                    result += mapped
+                } else if let value = scalarValue, let scalar = Unicode.Scalar(value) {
                     result += String(scalar)
                 } else {
                     result += ns.substring(with: match.range)
@@ -644,6 +1069,18 @@ public enum XHTMLTextExtractor {
         result += ns.substring(with: NSRange(location: last, length: ns.length - last))
         return result
     }
+
+    /// Numeric character references in the C1 range (decimal 128–159, and
+    /// their hex forms), read as Windows-1252 — what the authoring tool
+    /// actually meant. Code points 1252 leaves undefined (129, 141, 143,
+    /// 144, 157) fall through to literal decoding.
+    private static let cp1252C1References: [UInt32: String] = [
+        128: "€", 130: "‚", 131: "ƒ", 132: "„", 133: "…", 134: "†",
+        135: "‡", 136: "ˆ", 137: "‰", 138: "Š", 139: "‹", 140: "Œ",
+        142: "Ž", 145: "‘", 146: "’", 147: "“", 148: "”", 149: "•",
+        150: "–", 151: "—", 152: "˜", 153: "™", 154: "š", 155: "›",
+        156: "œ", 158: "ž", 159: "Ÿ",
+    ]
 
     /// Named HTML entities seen in real EPUBs: the XML five, Latin-1
     /// (typography, symbols, accented letters), and the common HTML 4
@@ -696,5 +1133,33 @@ public enum XHTMLTextExtractor {
         // Ligatures and modifiers
         "OElig": "Œ", "oelig": "œ", "Scaron": "Š", "scaron": "š",
         "Yuml": "Ÿ", "circ": "ˆ", "tilde": "˜",
+        // Greek letters (HTML 4 set), uppercase
+        "Alpha": "Α", "Beta": "Β", "Gamma": "Γ", "Delta": "Δ",
+        "Epsilon": "Ε", "Zeta": "Ζ", "Eta": "Η", "Theta": "Θ",
+        "Iota": "Ι", "Kappa": "Κ", "Lambda": "Λ", "Mu": "Μ",
+        "Nu": "Ν", "Xi": "Ξ", "Omicron": "Ο", "Pi": "Π",
+        "Rho": "Ρ", "Sigma": "Σ", "Tau": "Τ", "Upsilon": "Υ",
+        "Phi": "Φ", "Chi": "Χ", "Psi": "Ψ", "Omega": "Ω",
+        // Greek letters, lowercase (plus the symbol variants)
+        "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ",
+        "epsilon": "ε", "zeta": "ζ", "eta": "η", "theta": "θ",
+        "iota": "ι", "kappa": "κ", "lambda": "λ", "mu": "μ",
+        "nu": "ν", "xi": "ξ", "omicron": "ο", "pi": "π",
+        "rho": "ρ", "sigmaf": "ς", "sigma": "σ", "tau": "τ",
+        "upsilon": "υ", "phi": "φ", "chi": "χ", "psi": "ψ",
+        "omega": "ω", "thetasym": "ϑ", "upsih": "ϒ", "piv": "ϖ",
+        // Math and symbols (technical publishers)
+        "sum": "∑", "prod": "∏", "radic": "√", "int": "∫", "part": "∂",
+        "nabla": "∇", "asymp": "≈", "equiv": "≡", "cong": "≅", "sim": "∼",
+        "prop": "∝", "lang": "⟨", "rang": "⟩", "lceil": "⌈", "rceil": "⌉",
+        "lfloor": "⌊", "rfloor": "⌋", "oplus": "⊕", "otimes": "⊗",
+        "perp": "⊥", "ang": "∠", "and": "∧", "or": "∨", "there4": "∴",
+        "isin": "∈", "notin": "∉", "ni": "∋", "cap": "∩", "cup": "∪",
+        "sub": "⊂", "sup": "⊃", "sube": "⊆", "supe": "⊇", "empty": "∅",
+        "forall": "∀", "exist": "∃", "lowast": "∗", "sdot": "⋅",
+        "alefsym": "ℵ", "image": "ℑ", "real": "ℜ", "weierp": "℘",
+        "loz": "◊", "spades": "♠", "clubs": "♣", "hearts": "♥",
+        "diams": "♦", "crarr": "↵",
+        "lArr": "⇐", "uArr": "⇑", "rArr": "⇒", "dArr": "⇓", "hArr": "⇔",
     ]
 }

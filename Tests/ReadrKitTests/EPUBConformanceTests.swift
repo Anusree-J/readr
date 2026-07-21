@@ -111,7 +111,7 @@ final class EPUBConformanceTests: XCTestCase {
 
     // MARK: - OPF / spine variance
 
-    func testLinearNoSpineItemsAppendAfterTheMainFlow() throws {
+    func testLinearNoSpineItemsKeepPositionAndAreFlaggedNonLinear() throws {
         let opf = makeOPF(
             manifest: """
             <item id="notes" href="notes.xhtml" media-type="application/xhtml+xml"/>
@@ -129,9 +129,14 @@ final class EPUBConformanceTests: XCTestCase {
             ]),
             fallbackTitle: "x"
         )
+        // linear="no" items keep their spine POSITION (links into them keep
+        // working, no surprise reordering) but are flagged non-linear so
+        // continuous reading order skips them.
         XCTAssertEqual(book.chapters.count, 2)
-        XCTAssertTrue(book.chapters[0].text.contains("bright cold day"))
-        XCTAssertTrue(book.chapters[1].text.contains("Endnotes here."))
+        XCTAssertTrue(book.chapters[0].text.contains("Endnotes here."))
+        XCTAssertEqual(book.chapters[0].isLinear, false)
+        XCTAssertTrue(book.chapters[1].text.contains("bright cold day"))
+        XCTAssertNil(book.chapters[1].isLinear)
         XCTAssertEqual(book.chapters.map(\.order), [0, 1])
     }
 

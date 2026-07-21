@@ -37,17 +37,19 @@ public struct EPUBBookParser {
         let opf = OPF.parse(opfData)
         let baseDir = Self.directory(of: opfPath)
 
-        // Non-linear spine items (linear="no": endnotes, answer keys) leave
-        // the main reading flow but keep their content — appended after the
-        // linear chapters rather than interleaved or dropped.
-        let orderedSpine = opf.spineItems.filter { $0.linear } + opf.spineItems.filter { !$0.linear }
-        guard orderedSpine.count <= Self.maxSpineItems else {
-            throw EPUBParseError.tooManySpineItems(count: orderedSpine.count, limit: Self.maxSpineItems)
+        // Non-linear spine items (linear="no": endnotes, answer keys) keep
+        // their spine POSITION — links into them still land where expected —
+        // and are flagged `isLinear = false` so continuous reading order
+        // skips them. The EPUB 3 nav document, when it sits in the spine, is
+        // an in-book TOC page and is non-linear regardless.
+        guard opf.spineItems.count <= Self.maxSpineItems else {
+            throw EPUBParseError.tooManySpineItems(count: opf.spineItems.count, limit: Self.maxSpineItems)
         }
         var chapters: [Chapter] = []
         var chapterIndexByPath: [String: Int] = [:]
-        for entry in orderedSpine {
-            guard let item = opf.manifestItem(for: entry.idref) else { continue }
+        for entry in opf.spineItems {
+            guard let itemID = opf.manifestID(for: entry.idref),
+                  let item = opf.manifest[itemID] else { continue }
             let href = Self.resolve(base: baseDir, href: item.href)
             // Two itemrefs resolving to the same content document (duplicate
             // idrefs, or distinct manifest items sharing an href) must emit
@@ -57,7 +59,11 @@ public struct EPUBBookParser {
                   let html = Self.decodeText(data) else { continue }
             let extraction = XHTMLTextExtractor.extract(from: html)
             let text = extraction.text
-            guard !text.isEmpty else { continue }
+            let footnotes = extraction.footnotes.map { Footnote(id: $0.id, text: $0.text) }
+            // A document whose entire content was diverted to footnotes (a
+            // hidden-notes file) keeps its chapter — noteref links resolve
+            // into it — but a truly empty document is still skipped.
+            guard !text.isEmpty || !footnotes.isEmpty else { continue }
             let title = XHTMLTextExtractor.firstHeading(from: html)
             // Image and link hrefs are relative to the content document, not
             // the OPF.
@@ -68,13 +74,16 @@ public struct EPUBBookParser {
             let spans = Self.formatSpans(
                 from: extraction.spans, documentPath: href, documentDir: documentDir
             )
+            let isLinear = entry.linear && !opf.navItemIDs.contains(itemID)
             chapterIndexByPath[href] = chapters.count
             chapters.append(Chapter(
                 title: title, order: chapters.count, text: text,
                 images: images.isEmpty ? nil : images,
                 formatSpans: spans.isEmpty ? nil : spans,
                 sourcePath: href,
-                anchors: extraction.anchors.isEmpty ? nil : extraction.anchors
+                anchors: extraction.anchors.isEmpty ? nil : extraction.anchors,
+                footnotes: footnotes.isEmpty ? nil : footnotes,
+                isLinear: isLinear ? nil : false
             ))
         }
         guard !chapters.isEmpty else {
@@ -282,6 +291,9 @@ public struct EPUBBookParser {
             case .bold: kind = .bold
             case .italic: kind = .italic
             case .blockquote: kind = .blockquote
+            case .superscript: kind = .superscript
+            case .`subscript`: kind = .`subscript`
+            case .alignment(let alignment): kind = .alignment(alignment)
             case .link(let href):
                 kind = .link(linkTarget(
                     href: href, documentPath: documentPath, documentDir: documentDir
@@ -507,6 +519,9 @@ struct OPF {
     var metaCoverID: String?
     /// Manifest id of the EPUB3 navigation document (`properties="nav"`).
     var navItemID: String?
+    /// ALL manifest ids carrying the `nav` property — an in-spine nav doc is
+    /// non-linear whichever declaration order the manifest used.
+    var navItemIDs: Set<String> = []
     /// Manifest id named by `<spine toc="…">` (the EPUB2 NCX).
     var spineTocID: String?
     /// True when the package declares pre-paginated (fixed) layout — the
@@ -514,13 +529,13 @@ struct OPF {
     /// or any spine item's `rendition:layout-pre-paginated` override.
     var isFixedLayout = false
 
-    /// Manifest item for a spine idref. IDs are case-sensitive per spec, but
+    /// Manifest id for a spine idref. IDs are case-sensitive per spec, but
     /// sloppy real-world books mismatch case between spine and manifest —
     /// fall back to a case-insensitive match rather than dropping the chapter.
-    func manifestItem(for idref: String) -> (href: String, type: String)? {
-        if let item = manifest[idref] { return item }
+    func manifestID(for idref: String) -> String? {
+        if manifest[idref] != nil { return idref }
         let lowered = idref.lowercased()
-        return manifest.first { $0.key.lowercased() == lowered }?.value
+        return manifest.first { $0.key.lowercased() == lowered }?.key
     }
 
     /// The NCX manifest id: the spine's `toc` attribute when it resolves,
@@ -591,8 +606,9 @@ private final class OPFDelegate: NSObject, XMLParserDelegate {
                 if opf.coverItemID == nil, properties.contains("cover-image") {
                     opf.coverItemID = id
                 }
-                if opf.navItemID == nil, properties.contains("nav") {
-                    opf.navItemID = id
+                if properties.contains("nav") {
+                    opf.navItemIDs.insert(id)
+                    if opf.navItemID == nil { opf.navItemID = id }
                 }
             }
         case "spine":

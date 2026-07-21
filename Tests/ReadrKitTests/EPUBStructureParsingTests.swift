@@ -228,6 +228,123 @@ final class EPUBStructureParsingTests: XCTestCase {
         XCTAssertNil(images[1].displayHeight)
     }
 
+    // MARK: - Non-linear spine items and the in-spine nav doc
+
+    /// `linear="no"` items keep their spine POSITION (no reordering) and are
+    /// flagged `isLinear = false`; linear chapters carry nil (= linear).
+    func testLinearNoChapterKeepsSpinePositionAndIsFlaggedNonLinear() throws {
+        let opf = makeOPF(
+            manifest: """
+            <item id="notes" href="notes.xhtml" media-type="application/xhtml+xml"/>
+            <item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+            """,
+            spine: """
+            <itemref idref="notes" linear="no"/>
+            <itemref idref="c1"/>
+            """
+        )
+        let book = try parser.parse(
+            container: container(opf: opf, entries: [
+                "OEBPS/ch1.xhtml": chapterOne,
+                "OEBPS/notes.xhtml": "<html><body><p>Endnotes here.</p></body></html>",
+            ]),
+            fallbackTitle: "x"
+        )
+        XCTAssertEqual(book.chapters.count, 2)
+        // Spine order preserved: notes first, flagged non-linear.
+        XCTAssertTrue(book.chapters[0].text.contains("Endnotes here."))
+        XCTAssertEqual(book.chapters[0].isLinear, false)
+        XCTAssertTrue(book.chapters[1].text.contains("bright cold day"))
+        XCTAssertNil(book.chapters[1].isLinear)
+    }
+
+    /// An EPUB 3 nav document placed IN the spine is an in-book TOC page —
+    /// non-linear regardless of its `linear` attribute.
+    func testNavPropertyChapterInSpineIsFlaggedNonLinear() throws {
+        let navDoc = """
+        <html xmlns:epub="http://www.idpf.org/2007/ops"><body>
+        <nav epub:type="toc"><h1>Contents</h1><ol>
+          <li><a href="ch1.xhtml">One</a></li>
+        </ol></nav>
+        </body></html>
+        """
+        let opf = makeOPF(
+            manifest: """
+            <item id="nav" href="nav.xhtml" properties="nav" media-type="application/xhtml+xml"/>
+            <item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+            """,
+            spine: """
+            <itemref idref="nav"/>
+            <itemref idref="c1"/>
+            """
+        )
+        let book = try parser.parse(
+            container: container(opf: opf, entries: [
+                "OEBPS/nav.xhtml": navDoc,
+                "OEBPS/ch1.xhtml": chapterOne,
+            ]),
+            fallbackTitle: "x"
+        )
+        XCTAssertEqual(book.chapters.count, 2)
+        XCTAssertEqual(book.chapters[0].isLinear, false)
+        XCTAssertNil(book.chapters[1].isLinear)
+    }
+
+    // MARK: - Footnote pass-through
+
+    func testFootnoteAsidesReachChapterFootnotesAndLeaveTheText() throws {
+        let ch1 = """
+        <html><body><h1>One</h1>
+        <p>Fact<a epub:type="noteref" href="#fn1">1</a>.</p>
+        <aside epub:type="footnote" id="fn1"><p>The source.</p></aside>
+        </body></html>
+        """
+        let opf = makeOPF(
+            manifest: #"<item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/>"#,
+            spine: #"<itemref idref="c1"/>"#
+        )
+        let book = try parser.parse(
+            container: container(opf: opf, entries: ["OEBPS/ch1.xhtml": ch1]),
+            fallbackTitle: "x"
+        )
+        let chapter = try XCTUnwrap(book.chapters.first)
+        XCTAssertEqual(chapter.text, "One\nFact1.")
+        XCTAssertEqual(chapter.footnotes, [Footnote(id: "fn1", text: "The source.")])
+        XCTAssertNil(chapter.anchors?["fn1"])
+    }
+
+    func testChapterWithoutNotesCarriesNilFootnotes() throws {
+        let opf = makeOPF(
+            manifest: #"<item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/>"#,
+            spine: #"<itemref idref="c1"/>"#
+        )
+        let book = try parser.parse(
+            container: container(opf: opf, entries: ["OEBPS/ch1.xhtml": chapterOne]),
+            fallbackTitle: "x"
+        )
+        XCTAssertNil(book.chapters.first?.footnotes)
+    }
+
+    // MARK: - New span kinds flow through to FormatSpan
+
+    func testSupSubAndAlignmentSpansReachChapterFormatSpans() throws {
+        let ch1 = """
+        <html><body><p align="center">x<sup>2</sup> and H<sub>2</sub>O</p></body></html>
+        """
+        let opf = makeOPF(
+            manifest: #"<item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/>"#,
+            spine: #"<itemref idref="c1"/>"#
+        )
+        let book = try parser.parse(
+            container: container(opf: opf, entries: ["OEBPS/ch1.xhtml": ch1]),
+            fallbackTitle: "x"
+        )
+        let spans = try XCTUnwrap(book.chapters.first?.formatSpans)
+        XCTAssertEqual(Set(spans.map(\.kind)), [
+            .alignment(.center), .superscript, .`subscript`,
+        ])
+    }
+
     // MARK: - Codable compatibility
 
     func testChapterWithNewFieldsRoundTripsThroughCodable() throws {
