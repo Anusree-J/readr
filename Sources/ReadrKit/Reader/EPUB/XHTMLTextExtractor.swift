@@ -79,10 +79,13 @@ public enum XHTMLTextExtractor {
             case link(href: String)
             case superscript
             case `subscript`
-            /// Paragraph-level alignment recovered from inline markup only
-            /// (`<center>`, `align="…"`, `style="text-align:…"` — no CSS
-            /// engine).
+            /// Paragraph-level alignment recovered from inline markup
+            /// (`<center>`, `align="…"`, `style="text-align:…"`) or, when a
+            /// `CSSStyleResolver` is supplied, from class/element rules.
             case alignment(TextAlignment)
+            /// Small-caps run (CSS `font-variant: small-caps`, via class or
+            /// element stylesheet rules).
+            case smallCaps
         }
     }
 
@@ -117,6 +120,16 @@ public enum XHTMLTextExtractor {
         Scanner(html: html).run()
     }
 
+    /// Full-fidelity extraction with a stylesheet resolver: class and element
+    /// CSS rules additionally contribute italic/bold/inset/alignment/
+    /// small-caps spans and hidden-content diversion. With `styles` nil the
+    /// behavior is identical to `extract(from:)`.
+    public static func extract(
+        from html: String, styles: CSSStyleResolver?
+    ) -> ExtractionResult {
+        Scanner(html: html, styles: styles).run()
+    }
+
     /// Plain text with paragraph breaks preserved (legacy convenience). Images
     /// are dropped entirely — no placeholder — matching the historical
     /// behavior of this path.
@@ -142,6 +155,9 @@ public enum XHTMLTextExtractor {
         /// When false, `<img>` contributes neither a placeholder nor a ref
         /// (the legacy `text(from:)` behavior).
         private let includeImages: Bool
+        /// Optional stylesheet resolver: class/element CSS rules become
+        /// format spans and hidden diversions. Nil costs nothing.
+        private let styles: CSSStyleResolver?
         /// Final text, built as characters so offsets are character offsets.
         private var out: [Character] = []
 
@@ -210,10 +226,19 @@ public enum XHTMLTextExtractor {
         /// Open attribute-driven alignment spans per element name, so the
         /// element's own close tag (which is not a span tag) closes them.
         private var openAlignSpans: [String: Int] = [:]
+        /// Open stylesheet-driven spans, counted per full key (element name +
+        /// kind suffix, e.g. `"span@i"`) — the `openAlignSpans` pattern, one
+        /// bucket per CSS-resolvable kind.
+        private var openCSSSpans: [String: Int] = [:]
+        /// Suffixes of the per-element CSS span keys (italic, bold, inset →
+        /// blockquote, small-caps), checked at each close tag while any CSS
+        /// span is open.
+        private static let cssSpanSuffixes = ["@i", "@b", "@q", "@sc"]
 
-        init(html: String, includeImages: Bool = true) {
+        init(html: String, includeImages: Bool = true, styles: CSSStyleResolver? = nil) {
             self.html = html
             self.includeImages = includeImages
+            self.styles = styles
         }
 
         func run() -> ExtractionResult {
@@ -445,12 +470,19 @@ public enum XHTMLTextExtractor {
                 return
             }
 
+            // Stylesheet-resolved facts for this element — nil on the fast
+            // path (no resolver, or no class/style attribute and no element
+            // rule for the name).
+            let resolved = resolvedStyle(name, tagMarkup: tagMarkup, hasAttributes: hasAttributes)
+
             // Footnote/hidden region: epub:type footnote/endnote/rearnote/
             // note, role doc-footnote/doc-endnote, the boolean `hidden`
-            // attribute, or inline display:none / visibility:hidden. All
-            // content diverts to the footnote store, keyed by the element's
-            // own id (which therefore does NOT enter the anchors map).
-            if hasAttributes, XHTMLTextExtractor.isNoteOrHiddenRegion(tagMarkup) {
+            // attribute, inline display:none / visibility:hidden, or a
+            // class/element stylesheet rule resolving to hidden. All content
+            // diverts to the footnote store, keyed by the element's own id
+            // (which therefore does NOT enter the anchors map).
+            if (hasAttributes && XHTMLTextExtractor.isNoteOrHiddenRegion(tagMarkup))
+                || resolved?.hidden == true {
                 // Self-closed and void elements (`<img hidden>`) have no
                 // contents to divert — drop the element itself outright; a
                 // diversion would wait for a close tag that never comes.
@@ -502,19 +534,27 @@ public enum XHTMLTextExtractor {
                 }
                 pendingNewline = true
                 if name == "p" { openParagraphStart = out.count }
-                // Inline alignment (align="…" / style="text-align:…") on a
-                // block element; br/hr are void — nothing could close them.
-                if hasAttributes, !selfClosing, name != "br", name != "hr",
-                   tagMarkup.contains("align"),
-                   let alignment = XHTMLTextExtractor.inlineAlignment(in: tagMarkup) {
-                    let index = working.count
-                    working.append(WorkingSpan(
-                        tag: name + "@align", kind: .alignment(alignment),
-                        start: nil, end: nil
-                    ))
-                    openStack.append(index)
-                    unresolvedStarts.insert(index)
-                    openAlignSpans[name, default: 0] += 1
+                // Alignment on a block element. A stylesheet-resolved value
+                // wins (class/element rules, with any inline text-align
+                // already overlaid last inside the resolver); without one,
+                // the legacy inline sources (align="…" / style=
+                // "text-align:…") apply. br/hr are void — nothing could
+                // close them.
+                if !selfClosing, name != "br", name != "hr" {
+                    var alignment = resolved?.alignment
+                    if alignment == nil, hasAttributes, tagMarkup.contains("align") {
+                        alignment = XHTMLTextExtractor.inlineAlignment(in: tagMarkup)
+                    }
+                    if let alignment {
+                        let index = working.count
+                        working.append(WorkingSpan(
+                            tag: name + "@align", kind: .alignment(alignment),
+                            start: nil, end: nil
+                        ))
+                        openStack.append(index)
+                        unresolvedStarts.insert(index)
+                        openAlignSpans[name, default: 0] += 1
+                    }
                 }
             }
 
@@ -538,6 +578,17 @@ public enum XHTMLTextExtractor {
             }
 
             guard !selfClosing else { return }
+            // Class/element stylesheet formatting: spans keyed per element
+            // name (the "@align" pattern) so the element's own close tag
+            // closes them. `false` facts open nothing — no un-bolding/
+            // un-italicizing in v1. Void elements have no close tag and get
+            // no spans.
+            if let resolved, !XHTMLTextExtractor.voidTags.contains(name) {
+                if resolved.italic == true { openCSSSpan(name + "@i", kind: .italic) }
+                if resolved.bold == true { openCSSSpan(name + "@b", kind: .bold) }
+                if resolved.inset == true { openCSSSpan(name + "@q", kind: .blockquote) }
+                if resolved.smallCaps == true { openCSSSpan(name + "@sc", kind: .smallCaps) }
+            }
             if let (tag, kind) = spanKind(name, tagMarkup: tagMarkup, hasAttributes: hasAttributes) {
                 if case .heading = kind {
                     // An unclosed <blockquote> must not style the rest of the
@@ -617,6 +668,15 @@ public enum XHTMLTextExtractor {
                 closeSpan(name + "@align")
                 openAlignSpans[name] = open - 1
             }
+            if !openCSSSpans.isEmpty {
+                for suffix in Scanner.cssSpanSuffixes {
+                    let key = name + suffix
+                    if let open = openCSSSpans[key], open > 0 {
+                        closeSpan(key)
+                        openCSSSpans[key] = open - 1
+                    }
+                }
+            }
             if let key = spanTagKey(name) {
                 closeSpan(key)
             }
@@ -659,6 +719,42 @@ public enum XHTMLTextExtractor {
         }
 
         // MARK: Spans
+
+        /// The stylesheet-resolved facts for an element open tag, or nil on
+        /// the fast path: no resolver, or the element carries no class/style
+        /// attribute and no element rule exists for its name.
+        private func resolvedStyle(
+            _ name: String, tagMarkup: String, hasAttributes: Bool
+        ) -> ResolvedStyle? {
+            guard let styles else { return nil }
+            var classAttr: String?
+            var inlineStyle: String?
+            if hasAttributes {
+                if tagMarkup.contains("class") {
+                    classAttr = XHTMLTextExtractor.attribute("class", in: tagMarkup)
+                }
+                if tagMarkup.contains("style") {
+                    inlineStyle = XHTMLTextExtractor.attribute("style", in: tagMarkup)
+                }
+            }
+            guard classAttr != nil || inlineStyle != nil || styles.hasElementRule(name) else {
+                return nil
+            }
+            let resolved = styles.style(
+                element: name, classAttr: classAttr, inlineStyle: inlineStyle
+            )
+            return resolved.isEmpty ? nil : resolved
+        }
+
+        /// Open one stylesheet-driven span under `key` (element name + kind
+        /// suffix), mirroring the "@align" bookkeeping.
+        private func openCSSSpan(_ key: String, kind: Span.Kind) {
+            let index = working.count
+            working.append(WorkingSpan(tag: key, kind: kind, start: nil, end: nil))
+            openStack.append(index)
+            unresolvedStarts.insert(index)
+            openCSSSpans[key, default: 0] += 1
+        }
 
         /// The canonical span key for a formatting tag (b/strong share one key
         /// so sloppy `<b>…</strong>` pairs still close), or nil for tags that
@@ -806,7 +902,8 @@ public enum XHTMLTextExtractor {
     private static let attributeRegexes: [String: NSRegularExpression] = {
         var regexes: [String: NSRegularExpression] = [:]
         for name in ["id", "src", "alt", "href", "style", "width", "height",
-                     "class", "epub:type", "role", "hidden", "align", "xlink:href"] {
+                     "class", "epub:type", "role", "hidden", "align", "xlink:href",
+                     "rel"] {
             regexes[name] = try? NSRegularExpression(
                 pattern: "(?<![\\w-])\(name)\\s*=\\s*(\"[^\"]*\"|'[^']*')",
                 options: [.caseInsensitive]

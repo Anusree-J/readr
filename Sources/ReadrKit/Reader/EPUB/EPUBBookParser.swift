@@ -47,6 +47,7 @@ public struct EPUBBookParser {
         }
         var chapters: [Chapter] = []
         var chapterIndexByPath: [String: Int] = [:]
+        var styleCache = StylesheetCache()
         for entry in opf.spineItems {
             guard let itemID = opf.manifestID(for: entry.idref),
                   let item = opf.manifest[itemID] else { continue }
@@ -57,7 +58,14 @@ public struct EPUBBookParser {
             guard chapterIndexByPath[href] == nil else { continue }
             guard let data = try Self.optionalData(container, at: href),
                   let html = Self.decodeText(data) else { continue }
-            let extraction = XHTMLTextExtractor.extract(from: html)
+            // Image, link, AND stylesheet hrefs are relative to the content
+            // document, not the OPF.
+            let documentDir = Self.directory(of: href)
+            let styles = try Self.styleResolver(
+                for: html, documentDir: documentDir, container: container,
+                cache: &styleCache
+            )
+            let extraction = XHTMLTextExtractor.extract(from: html, styles: styles)
             let text = extraction.text
             let footnotes = extraction.footnotes.map { Footnote(id: $0.id, text: $0.text) }
             // A document whose entire content was diverted to footnotes (a
@@ -65,9 +73,6 @@ public struct EPUBBookParser {
             // into it — but a truly empty document is still skipped.
             guard !text.isEmpty || !footnotes.isEmpty else { continue }
             let title = XHTMLTextExtractor.firstHeading(from: html)
-            // Image and link hrefs are relative to the content document, not
-            // the OPF.
-            let documentDir = Self.directory(of: href)
             let images = Self.chapterImages(
                 in: text, refs: extraction.images, documentDir: documentDir
             )
@@ -250,6 +255,104 @@ public struct EPUBBookParser {
         ) != nil
     }
 
+    // MARK: - Stylesheets
+
+    /// Per-book stylesheet cache: sheet text per archive path (each sheet is
+    /// fetched and decoded once, unreadable paths remembered), and one
+    /// composed resolver per unique ordered sheet set (each set is parsed
+    /// once; chapters sharing it — the overwhelmingly common case — reuse
+    /// the parse).
+    struct StylesheetCache {
+        var sheetText: [String: String] = [:]
+        var unreadable: Set<String> = []
+        var resolverBySheetSet: [String: CSSStyleResolver] = [:]
+    }
+
+    /// Compiled once — the link pre-pass runs per spine document.
+    private static let linkTagRegex = try? NSRegularExpression(
+        pattern: "<link\\b[^>]*>", options: [.caseInsensitive]
+    )
+    private static let styleBlockRegex = try? NSRegularExpression(
+        pattern: "<style\\b[^>]*>(.*?)</style\\s*>",
+        options: [.caseInsensitive, .dotMatchesLineSeparators]
+    )
+
+    /// Hrefs of the document's applied stylesheets — `<link>` tags whose
+    /// `rel` tokens include `stylesheet` (attribute order-independent, both
+    /// quote styles) — in document order. Alternate stylesheets are not
+    /// applied by default and are skipped. Raw hrefs; the caller resolves
+    /// them against the document directory.
+    static func stylesheetHrefs(in html: String) -> [String] {
+        guard html.range(of: "<link", options: .caseInsensitive) != nil,
+              let regex = linkTagRegex else { return [] }
+        let ns = html as NSString
+        var hrefs: [String] = []
+        for match in regex.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
+            let tag = ns.substring(with: match.range)
+            guard let rel = XHTMLTextExtractor.attribute("rel", in: tag) else { continue }
+            let tokens = rel.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+            guard tokens.contains("stylesheet"), !tokens.contains("alternate"),
+                  let href = XHTMLTextExtractor.attribute("href", in: tag),
+                  !href.isEmpty else { continue }
+            hrefs.append(href)
+        }
+        return hrefs
+    }
+
+    /// Contents of the document's `<style>` blocks, in document order.
+    static func styleBlocks(in html: String) -> [String] {
+        guard html.range(of: "<style", options: .caseInsensitive) != nil,
+              let regex = styleBlockRegex else { return [] }
+        let ns = html as NSString
+        return regex.matches(in: html, range: NSRange(location: 0, length: ns.length)).map {
+            ns.substring(with: $0.range(at: 1))
+        }
+    }
+
+    /// The composed stylesheet resolver for one spine document: its linked
+    /// sheets in document order, then its `<style>` blocks (cascade order).
+    /// Nil when the document references no styles at all — the extractor's
+    /// zero-cost fast path. Only link-referenced sheets are ever fetched;
+    /// manifest CSS nothing points at is never read. A missing or unreadable
+    /// sheet is skipped (styles are enhancement), but an `EPUBParseError`
+    /// (zip-bomb cap) propagates as everywhere else.
+    static func styleResolver(
+        for html: String, documentDir: String, container: EPUBContainer,
+        cache: inout StylesheetCache
+    ) throws -> CSSStyleResolver? {
+        let hrefs = stylesheetHrefs(in: html)
+        let blocks = styleBlocks(in: html)
+        guard !hrefs.isEmpty || !blocks.isEmpty else { return nil }
+        var paths: [String] = []
+        for rawHref in hrefs {
+            let path = resolve(base: documentDir, href: rawHref)
+            guard !path.isEmpty, !cache.unreadable.contains(path) else { continue }
+            if cache.sheetText[path] == nil {
+                if let data = try optionalData(container, at: path),
+                   let css = decodeText(data) {
+                    cache.sheetText[path] = css
+                } else {
+                    cache.unreadable.insert(path)
+                    continue
+                }
+            }
+            paths.append(path)
+        }
+        guard !paths.isEmpty || !blocks.isEmpty else { return nil }
+        let setKey = paths.joined(separator: "\u{0}")
+        var resolver: CSSStyleResolver
+        if let cached = cache.resolverBySheetSet[setKey] {
+            resolver = cached
+        } else {
+            resolver = CSSStyleResolver(sheets: paths.compactMap { cache.sheetText[$0] })
+            cache.resolverBySheetSet[setKey] = resolver
+        }
+        // `<style>` blocks are document-specific — layered on a copy, the
+        // cached sheet-set resolver stays clean for the next chapter.
+        for block in blocks { resolver.add(sheet: block) }
+        return resolver
+    }
+
     // MARK: - Inline images
 
     /// Pair the k-th U+FFFC placeholder in `text` with the k-th extracted image
@@ -294,6 +397,7 @@ public struct EPUBBookParser {
             case .superscript: kind = .superscript
             case .`subscript`: kind = .`subscript`
             case .alignment(let alignment): kind = .alignment(alignment)
+            case .smallCaps: kind = .smallCaps
             case .link(let href):
                 kind = .link(linkTarget(
                     href: href, documentPath: documentPath, documentDir: documentDir
