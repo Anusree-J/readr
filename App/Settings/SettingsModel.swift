@@ -167,6 +167,11 @@ final class SettingsModel: ObservableObject {
     /// Validate a just-saved credential, complete its (possibly deferred)
     /// activation unless the key was rejected, and mirror the settled state.
     /// See `ProviderManager.requestActivation(of:)` / `validateAndActivate(_:)`.
+    ///
+    /// Under `-uiTestSkipProviderValidation` this returns before the manager
+    /// call, so a takeover that `requestActivation` deferred never completes —
+    /// UI tests that save a key over an already-configured provider must not
+    /// expect the Active badge to move.
     private func validateAndActivate(_ kind: ProviderInfo.Kind) async {
         guard !skipValidation else { return }
         validation[kind] = .validating

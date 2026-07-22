@@ -180,14 +180,21 @@ public final class ProviderManager: @unchecked Sendable {
     /// the kind's validation state (correct for a user-driven model change),
     /// but doing so now would discard the very result that authorized the
     /// takeover. An existing model choice for `kind` is kept.
+    ///
+    /// If the selection changed while validation was in flight — the user
+    /// explicitly picked a provider/model in the meantime — the deferred
+    /// takeover stands down: an async completion must not override a more
+    /// recent explicit choice.
     @discardableResult
     public func validateAndActivate(_ kind: ProviderInfo.Kind) async -> ValidationState? {
+        let selectionAtRequest = selection
         await validate(kind)
         guard let settled = validationState(kind) else { return nil }
         if case .invalid = settled { return settled }
 
         lock.lock()
         defer { lock.unlock() }
+        guard _selection == selectionAtRequest else { return settled }
         if _selection?.kind != kind {
             let modelID = ProviderCatalog.defaultModel(for: kind).modelID
             let selection = ProviderSelection(kind: kind, modelID: modelID)

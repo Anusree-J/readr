@@ -15,36 +15,51 @@ final class ProviderActivationTests: XCTestCase {
     private struct ValidatingMockProvider: LLMProvider, CredentialValidating {
         let info: ProviderInfo
         let validationError: Error?
+        /// Runs inside `validateCredential()`, letting a test interleave a
+        /// user action (e.g. an explicit `setActive`) mid-validation.
+        let onValidate: (@Sendable () -> Void)?
 
         func stream(_ request: ChatRequest) -> AsyncThrowingStream<ChatChunk, Error> {
             AsyncThrowingStream { $0.finish() }
         }
         func countTokens(_ text: String) throws -> Int { max(1, text.count / 4) }
         func validateCredential() async throws {
+            onValidate?()
             if let validationError { throw validationError }
         }
     }
 
     /// Factory that hands each kind a `ValidatingMockProvider` with a
-    /// per-kind scripted validation outcome (nil error = accepted).
+    /// per-kind scripted validation outcome (nil error = accepted) and an
+    /// optional mid-validation hook.
     private final class ScriptedFactory: @unchecked Sendable {
         private let lock = NSLock()
         private var errors: [ProviderInfo.Kind: Error] = [:]
+        private var hooks: [ProviderInfo.Kind: @Sendable () -> Void] = [:]
 
         func scriptValidationError(_ error: Error?, for kind: ProviderInfo.Kind) {
             lock.lock(); defer { lock.unlock() }
             errors[kind] = error
         }
 
+        func scriptOnValidate(_ hook: @escaping @Sendable () -> Void, for kind: ProviderInfo.Kind) {
+            lock.lock(); defer { lock.unlock() }
+            hooks[kind] = hook
+        }
+
         var make: ProviderManager.ProviderFactory {
             { [weak self] info, _ in
                 var error: Error?
+                var hook: (@Sendable () -> Void)?
                 if let self {
                     self.lock.lock()
                     error = self.errors[info.kind]
+                    hook = self.hooks[info.kind]
                     self.lock.unlock()
                 }
-                return ValidatingMockProvider(info: info, validationError: error)
+                return ValidatingMockProvider(
+                    info: info, validationError: error, onValidate: hook
+                )
             }
         }
     }
@@ -195,5 +210,58 @@ final class ProviderActivationTests: XCTestCase {
         _ = await manager.validateAndActivate(.openAI)
 
         XCTAssertEqual(manager.selection?.modelID, "gpt-4.1-mini")
+    }
+
+    func testValidateAndActivateStandsDownWhenUserChoseMidFlight() async throws {
+        try await establishWorkingOpenAI()
+
+        // While the anthropic key is validating, the user explicitly picks a
+        // different openAI model. The deferred takeover must stand down: an
+        // async completion never overrides a more recent explicit choice.
+        try store.save(.apiKey("sk-ant-good"), for: .anthropic)
+        factory.scriptValidationError(nil, for: .anthropic)
+        let manager = self.manager!
+        factory.scriptOnValidate({
+            manager.setActive(kind: .openAI, modelID: "gpt-4.1-mini")
+        }, for: .anthropic)
+        manager.clearValidation(.anthropic)
+        XCTAssertFalse(manager.requestActivation(of: .anthropic))
+
+        let settled = await manager.validateAndActivate(.anthropic)
+        XCTAssertEqual(settled, .active, "The key itself validated fine")
+        XCTAssertEqual(
+            manager.selection,
+            ProviderSelection(kind: .openAI, modelID: "gpt-4.1-mini"),
+            "The user's mid-flight explicit selection must win over the deferred takeover"
+        )
+    }
+
+    // MARK: - Persistence
+
+    func testDeferredTakeoverPersistsSelection() async throws {
+        let suite = "ProviderActivationTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+
+        let persisting = ProviderManager(
+            store: store, factory: factory.make, persistingIn: defaults
+        )
+        try store.save(.apiKey("sk-good"), for: .openAI)
+        persisting.setActive(kind: .openAI)
+        _ = await persisting.validate(.openAI)
+
+        try store.save(.apiKey("sk-ant-good"), for: .anthropic)
+        factory.scriptValidationError(nil, for: .anthropic)
+        persisting.clearValidation(.anthropic)
+        XCTAssertFalse(persisting.requestActivation(of: .anthropic))
+        _ = await persisting.validateAndActivate(.anthropic)
+        XCTAssertEqual(persisting.selection?.kind, .anthropic)
+
+        // A relaunch constructs a fresh manager over the same defaults — the
+        // takeover must have been persisted, not just held in memory.
+        let relaunched = ProviderManager(
+            store: store, factory: factory.make, persistingIn: defaults
+        )
+        XCTAssertEqual(relaunched.selection?.kind, .anthropic)
     }
 }
