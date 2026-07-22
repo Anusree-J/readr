@@ -103,6 +103,24 @@ final class CSSExtractionIntegrationTests: XCTestCase {
         )
     }
 
+    func testStyledSupTagYieldsSingleSuperscriptSpan() {
+        // Reset stylesheets routinely declare `sup { vertical-align: super }`.
+        // The literal tag already produces the superscript span — a second,
+        // CSS-driven span over the same run would compound the renderer's
+        // per-span 0.75× shrink (0.75 × 0.75 ≈ 0.56×).
+        let styles = CSSStyleResolver(
+            css: "sup { vertical-align: super; font-size: 0.75em }"
+        )
+        let result = XHTMLTextExtractor.extract(
+            from: #"<p>work.<sup>4</sup></p>"#, styles: styles
+        )
+        XCTAssertEqual(result.text, "work.4")
+        XCTAssertEqual(
+            result.spans.filter { $0.kind == .superscript }.count, 1,
+            "A styled <sup> must carry exactly one superscript span (spans: \(result.spans))"
+        )
+    }
+
     func testBoldClassOnElementRule() {
         // An element rule (no class attribute at all) still styles the tag.
         let styles = CSSStyleResolver(css: "figcaption { font-weight: bold }")
