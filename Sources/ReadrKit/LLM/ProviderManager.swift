@@ -144,6 +144,66 @@ public final class ProviderManager: @unchecked Sendable {
         Self.save(selection, to: defaults)
     }
 
+    /// Called after a new credential for `kind` has been stored: decides
+    /// whether the active selection moves to it now, or only after
+    /// validation clears the key (`validateAndActivate(_:)`).
+    ///
+    /// Immediate takeover is allowed only when nothing usable holds the
+    /// slot — no selection yet, the selected kind has lost its credential,
+    /// or `kind` is already selected (a no-op that keeps the model choice).
+    /// Otherwise the caller must follow up with `validateAndActivate(_:)`,
+    /// so an unproven key can't displace a working provider and then strand
+    /// the user on a rejected credential (issue #44).
+    ///
+    /// Returns `true` when `kind` is (now) the active selection.
+    @discardableResult
+    public func requestActivation(of kind: ProviderInfo.Kind) -> Bool {
+        if let current = selection {
+            if current.kind == kind { return true }
+            if isConfigured(current.kind) { return false }
+        }
+        setActive(kind: kind)
+        return true
+    }
+
+    /// Validate `kind` and, unless the credential was rejected, make it the
+    /// active selection. Returns the settled validation state.
+    ///
+    /// `.active` and `.unavailable` both activate — a transient network
+    /// failure must not condemn a key, matching `activeProvider()`'s
+    /// optimism — while `.invalid` leaves the selection untouched so a bad
+    /// key never displaces a working provider (issue #44). A `nil` settled
+    /// state means the credential changed mid-flight (generation bump); the
+    /// newer save's own flow owns activation, so this one stands down.
+    ///
+    /// Activation here bypasses `setActive` deliberately: `setActive` clears
+    /// the kind's validation state (correct for a user-driven model change),
+    /// but doing so now would discard the very result that authorized the
+    /// takeover. An existing model choice for `kind` is kept.
+    ///
+    /// If the selection changed while validation was in flight — the user
+    /// explicitly picked a provider/model in the meantime — the deferred
+    /// takeover stands down: an async completion must not override a more
+    /// recent explicit choice.
+    @discardableResult
+    public func validateAndActivate(_ kind: ProviderInfo.Kind) async -> ValidationState? {
+        let selectionAtRequest = selection
+        await validate(kind)
+        guard let settled = validationState(kind) else { return nil }
+        if case .invalid = settled { return settled }
+
+        lock.lock()
+        defer { lock.unlock() }
+        guard _selection == selectionAtRequest else { return settled }
+        if _selection?.kind != kind {
+            let modelID = ProviderCatalog.defaultModel(for: kind).modelID
+            let selection = ProviderSelection(kind: kind, modelID: modelID)
+            _selection = selection
+            Self.save(selection, to: defaults)
+        }
+        return settled
+    }
+
     // MARK: - Selection persistence
 
     private static func loadSelection(from defaults: UserDefaults?) -> ProviderSelection? {

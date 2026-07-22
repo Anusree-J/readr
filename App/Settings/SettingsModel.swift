@@ -146,24 +146,38 @@ final class SettingsModel: ObservableObject {
             // card doesn't flash a stale Connected/invalid from the old key
             // before the re-validate below settles.
             manager.clearValidation(kind)
-            activateIfNeeded(kind)
+            // A just-connected provider becomes the active one — the user's
+            // next step is asking the book, not hunting for a second
+            // dropdown. But the takeover is immediate only when nothing
+            // usable holds the active slot; otherwise it completes inside
+            // `validateAndActivate` once the key clears, so a bad save can't
+            // displace a working provider and strand Ask on a rejected
+            // credential (issue #44).
+            manager.requestActivation(of: kind)
             refresh()
             // A stored key isn't trusted until a lightweight test call
             // succeeds — verify it so the card shows Validating… → Connected
             // (or an invalid-key message) rather than a premature "Connected".
-            Task { await validate(kind) }
+            Task { await validateAndActivate(kind) }
         } catch {
             errorMessage = "Couldn't save the key: \(error.localizedDescription)"
         }
     }
 
-    /// A just-connected provider becomes the active one (keeping an existing
-    /// model choice for the same kind) — the user's next step is asking the
-    /// book, not hunting for a second dropdown.
-    private func activateIfNeeded(_ kind: ProviderInfo.Kind) {
-        if manager.selection?.kind != kind {
-            manager.setActive(kind: kind)
-        }
+    /// Validate a just-saved credential, complete its (possibly deferred)
+    /// activation unless the key was rejected, and mirror the settled state.
+    /// See `ProviderManager.requestActivation(of:)` / `validateAndActivate(_:)`.
+    ///
+    /// Under `-uiTestSkipProviderValidation` this returns before the manager
+    /// call, so a takeover that `requestActivation` deferred never completes —
+    /// UI tests that save a key over an already-configured provider must not
+    /// expect the Active badge to move.
+    private func validateAndActivate(_ kind: ProviderInfo.Kind) async {
+        guard !skipValidation else { return }
+        validation[kind] = .validating
+        _ = await manager.validateAndActivate(kind)
+        validation[kind] = manager.validationState(kind)
+        configured[kind] = manager.isConfigured(kind)
         activeSelection = manager.selection
     }
 
@@ -176,10 +190,11 @@ final class SettingsModel: ObservableObject {
             try store.save(credentials, for: kind)
             // New credentials — drop any prior result so a stale state can't
             // mask the un-checked sign-in before the validate below settles.
+            // Activation follows the same guarded policy as saveAPIKey (#44).
             manager.clearValidation(kind)
-            activateIfNeeded(kind)
+            manager.requestActivation(of: kind)
             refresh()
-            await validate(kind)
+            await validateAndActivate(kind)
         } catch AuthError.userCancelled {
             // user backed out — no error to show
         } catch {
