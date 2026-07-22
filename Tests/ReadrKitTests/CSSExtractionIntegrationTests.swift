@@ -68,6 +68,41 @@ final class CSSExtractionIntegrationTests: XCTestCase {
         XCTAssertEqual(slice(result.text, result.spans[0]), "Chapter One")
     }
 
+    func testVerticalAlignSuperClassBecomesSuperscriptSpan() {
+        // #43 — the InDesign/Scribe footnote-marker shape: no <sup> tag, a
+        // classed wrapper span carries `vertical-align: super` in the
+        // stylesheet, and the marker digit sits in a nested plain span + <a>.
+        let styles = CSSStyleResolver(
+            css: "span.scribe_footnote-ref { font-size: 0.7em; vertical-align: super }"
+        )
+        let result = XHTMLTextExtractor.extract(
+            from: #"""
+            <p>choose to be extraordinary.<span class="scribe_footnote-ref"><span><a href="#fn3">3</a></span></span></p>
+            """#,
+            styles: styles
+        )
+        XCTAssertEqual(result.text, "choose to be extraordinary.3")
+        XCTAssertTrue(
+            result.spans.contains {
+                $0.kind == .superscript && slice(result.text, $0) == "3"
+            },
+            "The CSS-raised marker should carry a superscript span (spans: \(result.spans))"
+        )
+    }
+
+    func testVerticalAlignSubClassBecomesSubscriptSpan() {
+        let styles = CSSStyleResolver(css: ".chem { vertical-align: sub }")
+        let result = XHTMLTextExtractor.extract(
+            from: #"<p>H<span class="chem">2</span>O</p>"#, styles: styles
+        )
+        XCTAssertEqual(result.text, "H2O")
+        XCTAssertTrue(
+            result.spans.contains {
+                $0.kind == .subscript && slice(result.text, $0) == "2"
+            }
+        )
+    }
+
     func testBoldClassOnElementRule() {
         // An element rule (no class attribute at all) still styles the tag.
         let styles = CSSStyleResolver(css: "figcaption { font-weight: bold }")

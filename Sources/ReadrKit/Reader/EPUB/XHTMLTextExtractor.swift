@@ -622,6 +622,15 @@ public enum XHTMLTextExtractor {
                 if resolved.smallCaps == true {
                     openCSSSpan(name + "@sc", kind: .smallCaps, into: &atSpanKeys)
                 }
+                // `vertical-align: super/sub` — the footnote-marker pattern
+                // (#43): InDesign-produced EPUBs raise note refs with a
+                // classed span, not <sup>. `.baseline` opens nothing (it
+                // exists to cancel, not to style).
+                if resolved.verticalAlign == .raised {
+                    openCSSSpan(name + "@sup", kind: .superscript, into: &atSpanKeys)
+                } else if resolved.verticalAlign == .lowered {
+                    openCSSSpan(name + "@sub", kind: .subscript, into: &atSpanKeys)
+                }
             }
             // Record which @-keyed spans this open created so ITS close tag
             // (and only its close tag) closes them. Opens that created none
