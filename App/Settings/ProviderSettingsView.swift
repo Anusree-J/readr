@@ -210,15 +210,17 @@ struct ProviderSettingsView: View {
     }
 
     /// Capsule button on a configured-but-inactive card that makes it the
-    /// active provider (keeping the kind's prior model choice, else the
-    /// catalog default). Occupies the same header slot as the Active badge,
-    /// so the control and the state it produces read as one affordance.
+    /// active provider with the kind's catalog-default model (the selection
+    /// is a single global pair, so an inactive kind has no stored model
+    /// choice to preserve). Occupies the same header slot as the Active
+    /// badge, so the control and the state it produces read as one
+    /// affordance.
     private func makeActiveButton(for kind: ProviderInfo.Kind) -> some View {
         Button {
-            let modelID = model.activeSelection?.kind == kind
-                ? model.activeSelection!.modelID
-                : ProviderCatalog.defaultModel(for: kind).modelID
-            model.makeActive(kind: kind, modelID: modelID)
+            model.makeActive(
+                kind: kind,
+                modelID: ProviderCatalog.defaultModel(for: kind).modelID
+            )
         } label: {
             Text("Make Active")
                 .font(.caption2.weight(.semibold))
