@@ -74,6 +74,19 @@ public struct OAuthProviderConfig: Sendable, Equatable {
         flow: .pkceKeyExchange
     )
 
+    /// The OAuth configuration for a provider kind, or nil for kinds that
+    /// connect some other way (API key, local). Single source of truth —
+    /// Settings' sign-in buttons and the token refresher both derive from it.
+    public static func config(for kind: ProviderInfo.Kind) -> OAuthProviderConfig? {
+        switch kind {
+        case .chatGPT: return .openAI
+        case .openRouter: return .openRouter
+        // Anthropic: prohibited by ToS (docs/AUTH.md); openAI kind is
+        // API-key-only by design; local needs no credentials.
+        case .anthropic, .openAI, .local: return nil
+        }
+    }
+
     /// Anthropic does NOT offer a supported subscription-OAuth path for Readr:
     /// Anthropic's Consumer Terms prohibit using Free/Pro/Max OAuth tokens in any
     /// third-party product. Connect Anthropic with an **API key** instead. This

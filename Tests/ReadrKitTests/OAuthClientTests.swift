@@ -250,6 +250,16 @@ final class OAuthClientTests: XCTestCase {
         }
     }
 
+    // MARK: - Kind → config mapping
+
+    func testConfigForKindMapsSignInKindsOnly() {
+        XCTAssertEqual(OAuthProviderConfig.config(for: .chatGPT), .openAI)
+        XCTAssertEqual(OAuthProviderConfig.config(for: .openRouter), .openRouter)
+        XCTAssertNil(OAuthProviderConfig.config(for: .anthropic), "prohibited by ToS — docs/AUTH.md")
+        XCTAssertNil(OAuthProviderConfig.config(for: .openAI), "API-key path by design")
+        XCTAssertNil(OAuthProviderConfig.config(for: .local))
+    }
+
     func testRefreshThrowsForKeyExchangeStyle() async {
         let client = OAuthClient(config: openRouter, http: MockHTTPClient())
         let credentials = Credentials.oauth(accessToken: "at", refreshToken: "rt", expiresAt: nil)
