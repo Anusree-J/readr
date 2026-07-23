@@ -246,6 +246,10 @@ final class SettingsModel: ObservableObject {
         // Consumer Terms prohibit using Free/Pro/Max OAuth tokens in third-party
         // apps. Use an Anthropic API key instead. See docs/AUTH.md.
         case .anthropic: return nil
+        // Sign-in wiring for these lands with the settings-UI phase of this
+        // branch (returning the configs here is what surfaces the buttons).
+        case .chatGPT: return nil
+        case .openRouter: return nil
         case .local: return nil
         }
     }

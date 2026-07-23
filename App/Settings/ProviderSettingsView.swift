@@ -234,7 +234,10 @@ struct ProviderSettingsView: View {
             return (URL(string: "https://console.anthropic.com/settings/keys")!, "anthropic")
         case .openAI:
             return (URL(string: "https://platform.openai.com/api-keys")!, "openai")
-        case .local:
+        case .openRouter:
+            return (URL(string: "https://openrouter.ai/keys")!, "openrouter")
+        case .chatGPT, .local:
+            // ChatGPT connects by subscription sign-in only; Local needs no key.
             return nil
         }
     }
@@ -242,7 +245,9 @@ struct ProviderSettingsView: View {
     private func title(for kind: ProviderInfo.Kind) -> String {
         switch kind {
         case .anthropic: return "Claude (Anthropic)"
-        case .openAI: return "ChatGPT (OpenAI)"
+        case .openAI: return "OpenAI (API key)"
+        case .chatGPT: return "ChatGPT (subscription)"
+        case .openRouter: return "OpenRouter"
         case .local: return "Local model (on-device)"
         }
     }

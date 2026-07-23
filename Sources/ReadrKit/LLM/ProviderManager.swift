@@ -42,7 +42,11 @@ public final class ProviderManager: @unchecked Sendable {
                 case .anthropic:
                     return "Claude (Anthropic) isn't connected. Add an API key in Settings → AI Providers."
                 case .openAI:
-                    return "ChatGPT (OpenAI) isn't connected. Add an API key in Settings → AI Providers."
+                    return "OpenAI isn't connected. Add an API key in Settings → AI Providers."
+                case .chatGPT:
+                    return "ChatGPT isn't connected. Sign in with your ChatGPT account in Settings → AI Providers."
+                case .openRouter:
+                    return "OpenRouter isn't connected. Sign in or add an API key in Settings → AI Providers."
                 case .local:
                     return "The local model isn't available. Make sure Ollama is running on this device."
                 }
@@ -392,7 +396,7 @@ public final class ProviderManager: @unchecked Sendable {
 
     /// The kinds that are currently usable. Local is always included.
     public func availableKinds() -> [ProviderInfo.Kind] {
-        let allKinds: [ProviderInfo.Kind] = [.anthropic, .openAI, .local]
+        let allKinds: [ProviderInfo.Kind] = [.anthropic, .openAI, .chatGPT, .openRouter, .local]
         return allKinds.filter { isConfigured($0) }
     }
 
