@@ -97,6 +97,29 @@ public enum ProviderCatalog {
         }
     }
 
+    /// Retired model IDs mapped to their same-tier successors, so a persisted
+    /// selection survives a catalog refresh without silently jumping pricing
+    /// tiers (a stored mid-tier sonnet-4-6 must not resolve to flagship Opus).
+    static let legacyReplacements: [String: String] = [
+        "claude-sonnet-4-6": "claude-sonnet-5",
+        "gpt-4.1": "gpt-5.6-sol",
+        "gpt-4.1-mini": "gpt-5.6-luna",
+    ]
+
+    /// Resolve a (possibly retired) model ID for `kind`: exact catalog match
+    /// first, then the same-tier legacy replacement, then the kind's default.
+    public static func resolve(modelID: String?, for kind: ProviderInfo.Kind) -> ProviderInfo {
+        let catalog = models(for: kind)
+        if let id = modelID {
+            if let exact = catalog.first(where: { $0.modelID == id }) { return exact }
+            if let replacement = legacyReplacements[id],
+               let mapped = catalog.first(where: { $0.modelID == replacement }) {
+                return mapped
+            }
+        }
+        return defaultModel(for: kind)
+    }
+
     /// The default (first listed) model for a given provider kind.
     ///
     /// The per-kind lists above are non-empty by construction, so the

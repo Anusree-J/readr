@@ -14,7 +14,7 @@ public struct OpenAIProvider: LLMProvider, CredentialValidating {
         credentials: Credentials,
         model: String = "gpt-5.6-sol",
         http: HTTPClient = URLSessionHTTPClient(),
-        contextBudget: Int = 128_000
+        contextBudget: Int = 200_000
     ) {
         self.credentials = credentials
         self.model = model
